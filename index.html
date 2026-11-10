@@ -6,13 +6,13 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01400</title>
+  <title>鋼琴練習 · Piano Practice v0.01500</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01400</span></h1>
+      <h1>鋼琴練習 <span class="ver">v0.01500</span></h1>
       <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），中間同步歌詞，下面係跟 MiniLab 3 嘅鍵盤。亦可以先開五度圈睇調。</p>
     </header>
 
@@ -39,20 +39,50 @@
     </div>
 
     <footer class="foot">
-      <p>v0.01400：練習頁譜在上、歌詞在鍵盤上面、鍵盤闊度鎖死。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+      <p>v0.01500：鍵盤可按比例縮放、兩條 track 可分開顯示／靜音、播放可跟播示範、進度條可拖動。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
     </footer>
   </section>
 
   <section id="view-practice" class="view view-practice" hidden>
+    <div class="rotate-hint" id="rotate-hint" role="dialog" aria-label="請將手機打橫">
+      <div class="rotate-hint-card">
+        <svg class="rotate-hint-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="18" y="8" width="28" height="48" rx="4" fill="none" stroke="currentColor" stroke-width="3"/>
+          <circle cx="32" cy="50" r="2" fill="currentColor"/>
+          <path d="M50 22c8 6 8 18 0 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <path d="M50 18v8h-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p>請將手機打橫</p>
+      </div>
+    </div>
+
     <div class="practice-stage">
       <div class="practice-chrome">
-        <button type="button" class="btn" data-open-home>返回</button>
-        <button type="button" class="btn primary btn-audio">開聲</button>
-        <button type="button" class="btn btn-midi">連接 MIDI</button>
-        <span class="midi-status status">MIDI：未連接</span>
-        <button type="button" class="btn primary" id="fa-play">播放</button>
-        <button type="button" class="btn" id="fa-pause">暫停</button>
-        <button type="button" class="btn" id="fa-stop">停止</button>
+        <button type="button" class="btn chrome-back" data-open-home>返回</button>
+        <button type="button" class="btn primary btn-audio chrome-desk">開聲</button>
+        <button type="button" class="btn btn-midi chrome-desk">連接 MIDI</button>
+        <span class="midi-status status chrome-desk">MIDI：未連接</span>
+
+        <div class="fa-transport-btns" role="group" aria-label="播放控制">
+          <button type="button" class="btn-transport is-play" id="fa-play" aria-label="播放" title="播放">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.8v14.4L20.2 12 8 4.8z" fill="currentColor"/></svg>
+          </button>
+          <button type="button" class="btn-transport is-pause" id="fa-pause" aria-label="暫停" title="暫停">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/></svg>
+          </button>
+          <button type="button" class="btn-transport is-stop" id="fa-stop" aria-label="停止" title="停止">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.4" y="6.4" width="11.2" height="11.2" rx="1.6" fill="currentColor"/></svg>
+          </button>
+        </div>
+
+        <label class="chrome-label"><input type="checkbox" id="fa-guide" checked />示範</label>
+        <button type="button" class="btn btn-more" id="fa-more" aria-expanded="false" aria-controls="fa-more-panel">更多</button>
+      </div>
+
+      <div class="practice-more" id="fa-more-panel">
+        <button type="button" class="btn primary btn-audio chrome-phone">開聲</button>
+        <button type="button" class="btn btn-midi chrome-phone">連接 MIDI</button>
+        <span class="midi-status status chrome-phone">MIDI：未連接</span>
         <label class="chrome-label">Level
           <select id="fa-level"></select>
         </label>
@@ -61,6 +91,18 @@
           <span id="fa-bpm-val">68</span>
         </label>
         <label class="chrome-label"><input type="checkbox" id="fa-metro" checked />拍子機</label>
+        <label class="chrome-label">鍵盤大小
+          <input id="fa-key-scale" type="range" min="70" max="160" value="100" />
+          <span id="fa-key-scale-val">100%</span>
+        </label>
+        <span class="chrome-group">鍵盤顯示：
+          <label class="chrome-label"><input type="checkbox" id="fa-hl-melody" checked />旋律</label>
+          <label class="chrome-label"><input type="checkbox" id="fa-hl-chord" checked />和弦</label>
+        </span>
+        <span class="chrome-group">靜音：
+          <label class="chrome-label"><input type="checkbox" id="fa-mute-melody" />旋律</label>
+          <label class="chrome-label"><input type="checkbox" id="fa-mute-chord" />和弦</label>
+        </span>
         <label class="chrome-label">八度
           <select class="octave-offset">
             <option value="-1">−1</option>
@@ -71,16 +113,12 @@
         <label class="chrome-label">音量
           <input class="volume" type="range" min="0" max="100" value="70" />
         </label>
-        <div class="fa-score-box">
-          <span class="k">分數</span>
-          <span class="v" id="fa-score">0</span>
-        </div>
       </div>
 
       <div class="fa-transport">
         <div class="fa-timeline">
           <span class="fa-time" id="fa-time-now">0:00</span>
-          <div class="fa-timeline-track" id="fa-timeline-track" role="progressbar" aria-label="播放進度">
+          <div class="fa-timeline-track" id="fa-timeline-track" role="slider" aria-label="播放進度" tabindex="0">
             <div class="fa-timeline-fill" id="fa-timeline-fill"></div>
             <div class="fa-timeline-playhead" id="fa-timeline-playhead"></div>
           </div>
