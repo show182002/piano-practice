@@ -1,11 +1,8 @@
 /* Music theory helpers: pitch classes, major scale, diatonic chords, chord symbols. */
 (function (global) {
-  // Prefer sharps for sharp keys, flats for flat keys
   const SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const FLAT  = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 
-  // Major circle order (clockwise from C): fifths
-  // pc: pitch class 0=C … 11=B
   const MAJOR_KEYS = [
     { id: "C",  name: "C",  pc: 0,  accidental: "none",  sig: 0 },
     { id: "G",  name: "G",  pc: 7,  accidental: "sharp", sig: 1 },
@@ -21,7 +18,7 @@
     { id: "F",  name: "F",  pc: 5,  accidental: "flat",  sig: -1 }
   ];
 
-  const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11]; // W W H W W W H
+  const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
   const CHORD_QUAL = [
     { roman: "I",   quality: "maj",  intervals: [0, 4, 7] },
     { roman: "ii",  quality: "min",  intervals: [0, 3, 7] },
@@ -33,8 +30,9 @@
   ];
 
   const ROOT_PC = {
-    C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4,
-    F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9, "A#": 10, Bb: 10, B: 11
+    C: 0, "C#": 1, "C♯": 1, Db: 1, "D♭": 1, D: 2, "D#": 3, "D♯": 3, Eb: 3, "E♭": 3, E: 4,
+    F: 5, "F#": 6, "F♯": 6, Gb: 6, "G♭": 6, G: 7, "G#": 8, "G♯": 8, Ab: 8, "A♭": 8,
+    A: 9, "A#": 10, "A♯": 10, Bb: 10, "B♭": 10, B: 11
   };
 
   const QUALITY_INTERVALS = {
@@ -52,7 +50,12 @@
     maj7: [0, 4, 7, 11],
     M7: [0, 4, 7, 11],
     m7: [0, 3, 7, 10],
-    min7: [0, 3, 7, 10]
+    min7: [0, 3, 7, 10],
+    "6": [0, 4, 7, 9],
+    maj6: [0, 4, 7, 9],
+    m6: [0, 3, 7, 9],
+    min6: [0, 3, 7, 9],
+    m6: [0, 3, 7, 9]
   };
 
   function namesFor(accidental) {
@@ -68,7 +71,7 @@
   }
 
   function relativeMinorPc(majorPc) {
-    return (majorPc + 9) % 12; // down 3 semitones / up 9
+    return (majorPc + 9) % 12;
   }
 
   function keyInfo(keyId) {
@@ -107,20 +110,48 @@
     return Math.abs(sig) + " 個降號";
   }
 
+  function normalizeNoteName(raw) {
+    return String(raw || "").trim().replace(/♯/g, "#").replace(/♭/g, "b");
+  }
+
+  function parsePitchName(raw) {
+    const s = normalizeNoteName(raw);
+    const m = s.match(/^([A-G](?:#|b)?)(\d+)?$/);
+    if (!m) return null;
+    const pc = ROOT_PC[m[1]];
+    if (pc == null) return null;
+    const oct = m[2] != null ? Number(m[2]) : null;
+    const midi = oct == null ? null : (oct + 1) * 12 + pc;
+    return { name: m[1], pc, oct, midi };
+  }
+
+  function prettyChord(symbol) {
+    return String(symbol || "").replace(/#/g, "♯").replace(/b/g, "♭");
+  }
+
   function parseChordSymbol(symbol) {
     const raw = String(symbol || "").trim();
-    const m = raw.match(/^([A-G](?:#|b)?)(.*)$/);
+    const norm = normalizeNoteName(raw);
+    const m = norm.match(/^([A-G](?:#|b)?)(.*)$/);
     if (!m) return null;
     const rootName = m[1];
     const rootPc = ROOT_PC[rootName];
     if (rootPc == null) return null;
-    let quality = (m[2] || "").trim();
-    // Normalise a few aliases; ignore slash-bass for pitch-class sets (C/E → C)
-    const slash = quality.indexOf("/");
-    if (slash >= 0) quality = quality.slice(0, slash).trim();
+    let rest = (m[2] || "").trim();
+    let bassName = null;
+    let bassPc = null;
+    const slash = rest.indexOf("/");
+    if (slash >= 0) {
+      bassName = rest.slice(slash + 1).trim();
+      rest = rest.slice(0, slash).trim();
+      const bass = parsePitchName(bassName);
+      if (bass) bassPc = bass.pc;
+    }
+    const quality = rest;
     const intervals = QUALITY_INTERVALS[quality] || QUALITY_INTERVALS[""];
     const pcs = intervals.map((i) => (rootPc + i) % 12);
-    return { symbol: raw, rootName, rootPc, quality, pcs };
+    if (bassPc != null && pcs.indexOf(bassPc) < 0) pcs.push(bassPc);
+    return { symbol: raw, rootName, rootPc, quality, bassName, bassPc, pcs };
   }
 
   function chordPcsFromSymbol(symbol) {
@@ -132,11 +163,15 @@
     MAJOR_KEYS,
     SHARP,
     FLAT,
+    ROOT_PC,
     pcName,
     majorScalePcs,
     relativeMinorPc,
     keyInfo,
     signatureLabel,
+    normalizeNoteName,
+    parsePitchName,
+    prettyChord,
     parseChordSymbol,
     chordPcsFromSymbol
   };

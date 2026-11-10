@@ -1,4 +1,4 @@
-/* Follow-along practice: BPM timeline, lyrics, chord chart, metronome, simple scoring. */
+/* Follow-along practice: BPM clock, karaoke slot, scrolling note highway, scoring. */
 (function (global) {
   const POINTS_HIT = 10;
   const DEDUPE_MS = 280;
@@ -6,13 +6,17 @@
   const SCHEDULE_AHEAD = 0.12;
   const MIN_BPM = 40;
   const MAX_BPM = 120;
+  const PX_PER_BEAT = 88;
+  const NOW_PAD = 28;
+  const STAFF_MIDIS = [64, 67, 71, 74, 77]; // E4 G4 B4 D5 F5 treble lines
 
   let rootEl = null;
+  let highwayEl = null;
   let song = null;
-  let levelId = 1;
-  let bpm = 76;
+  let levelId = 3;
+  let bpm = 68;
   let metronomeOn = true;
-  let state = "stopped"; // stopped | playing | paused
+  let state = "stopped";
   let finished = false;
   let score = 0;
   let active = false;
@@ -27,6 +31,7 @@
   let unsubscribe = null;
   const lastScoreAt = new Map();
   let scoreFlashTimer = 0;
+  let builtForLevel = null;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -47,8 +52,19 @@
     return song.beatsPerBar || 4;
   }
 
+  function pickupBeats() {
+    const lv = currentLevel();
+    if (lv.pickupBeats != null) return lv.pickupBeats;
+    return song.pickupBeats || 0;
+  }
+
   function totalBeats() {
     return progression().reduce((s, ev) => s + ev.beats, 0);
+  }
+
+  function melodyNotes() {
+    const lv = currentLevel();
+    return (lv.melody && lv.melody.length) ? lv.melody : (song.melody || []);
   }
 
   function lyricsList() {
@@ -74,7 +90,7 @@
 
   function clampBpm(v) {
     const n = Number(v);
-    if (!Number.isFinite(n)) return song.defaultBpm || 76;
+    if (!Number.isFinite(n)) return song.defaultBpm || 68;
     return Math.max(MIN_BPM, Math.min(MAX_BPM, Math.round(n)));
   }
 
@@ -113,216 +129,191 @@
     return null;
   }
 
+  function melodyAtBeat(beat) {
+    const notes = melodyNotes();
+    let cur = null;
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      if (n.start <= beat && beat < n.start + n.dur) cur = n;
+      else if (n.start > beat) break;
+    }
+    return cur;
+  }
+
   function highlightCurrent() {
     if (!global.PianoUI) return;
-    const cap = Math.min(Math.floor(currentBeatFloat()), Math.max(0, totalBeats() - 1));
+    const beat = currentBeatFloat();
+    const cap = Math.min(Math.floor(beat), Math.max(0, totalBeats() - 1));
     const info = eventAtBeat(cap);
-    if (!info) {
-      PianoUI.clearHighlight();
-      return;
+    const mel = melodyAtBeat(beat);
+    const pcs = info && info.ev.chord ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
+    if (PianoUI.setHighlights) {
+      PianoUI.setHighlights({
+        chordPcs: pcs,
+        melodyMidi: mel ? mel.midi : null
+      });
+    } else {
+      PianoUI.setHighlightPcs(pcs);
     }
-    const pcs = MusicTheory.chordPcsFromSymbol(info.ev.chord);
-    PianoUI.setHighlightPcs(pcs);
   }
 
   function $(id) {
-    return rootEl.querySelector("#" + id);
+    return document.getElementById(id);
   }
 
-  function buildShell() {
-    rootEl.innerHTML = "";
-    rootEl.classList.add("fa-root");
+  function pretty(sym) {
+    return global.MusicTheory && MusicTheory.prettyChord ? MusicTheory.prettyChord(sym) : (sym || "—");
+  }
 
-    const header = el("div", "fa-header");
-    const titles = el("div");
-    const h2 = el("h2", "fa-title", "《" + song.title + "》");
-    h2.appendChild(document.createTextNode(" "));
-    h2.appendChild(el("span", "fa-artist", song.artist));
-    titles.appendChild(h2);
-    titles.appendChild(el("p", "fa-disclaimer", song.disclaimer + " · " + song.key + " 大調"));
-    header.appendChild(titles);
-    const scoreBox = el("div", "fa-score-box");
-    scoreBox.appendChild(el("span", "k", "分數"));
-    const scoreVal = el("span", "v", "0");
-    scoreVal.id = "fa-score";
-    scoreBox.appendChild(scoreVal);
-    header.appendChild(scoreBox);
-    rootEl.appendChild(header);
+  function midiToYStaff(midi) {
+    // Map midi to a vertical staff position later used as X in the vertical-staff highway.
+    // Treble bottom line E4=64; each diatonic step is one half-space.
+    // Use a simple chromatic-to-pixel map instead, centered on the treble staff.
+    return midi;
+  }
 
-    const nowBox = el("div", "fa-now");
-    nowBox.appendChild(el("div", "fa-now-label", "而家彈"));
-    const chordEl = el("div", "fa-now-chord", "—");
-    chordEl.id = "fa-now-chord";
-    chordEl.setAttribute("aria-live", "polite");
-    nowBox.appendChild(chordEl);
-    const meta = el("div", "fa-now-meta");
-    const sectionEl = el("span");
-    sectionEl.id = "fa-section";
-    const beatsEl = el("span");
-    beatsEl.id = "fa-beats";
-    const nextEl = el("span");
-    nextEl.id = "fa-next";
-    const dots = el("span", "fa-beat-dots");
-    dots.id = "fa-beat-dots";
-    meta.appendChild(sectionEl);
-    meta.appendChild(beatsEl);
-    meta.appendChild(nextEl);
-    meta.appendChild(dots);
-    nowBox.appendChild(meta);
-    rootEl.appendChild(nowBox);
+  function staffXFromMidi(midi, width) {
+    const minM = 53; // F3, a bit below G3
+    const maxM = 81; // A5, a bit above G5
+    const t = (midi - minM) / (maxM - minM);
+    const pad = 88;
+    return pad + Math.max(0, Math.min(1, t)) * (width - pad - 28);
+  }
 
-    const lyricBox = el("div", "fa-lyrics");
-    const lyricCur = el("div", "fa-lyric-current", "");
-    lyricCur.id = "fa-lyric-current";
-    lyricCur.setAttribute("aria-live", "polite");
-    const lyricNext = el("div", "fa-lyric-next", "");
-    lyricNext.id = "fa-lyric-next";
-    lyricBox.appendChild(lyricCur);
-    lyricBox.appendChild(lyricNext);
-    rootEl.appendChild(lyricBox);
+  function buildHighway() {
+    if (!highwayEl) return;
+    highwayEl.innerHTML = "";
+    highwayEl.classList.add("fa-highway");
+    const total = totalBeats();
+    const height = Math.max(total * PX_PER_BEAT + 200, 400);
+    highwayEl.style.height = height + "px";
 
-    const tl = el("div", "fa-timeline");
-    const timeNow = el("span", "fa-time", "0:00");
-    timeNow.id = "fa-time-now";
-    const track = el("div", "fa-timeline-track");
-    track.id = "fa-timeline-track";
-    track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", "播放進度");
-    const fill = el("div", "fa-timeline-fill");
-    fill.id = "fa-timeline-fill";
-    const head = el("div", "fa-timeline-playhead");
-    head.id = "fa-timeline-playhead";
-    track.appendChild(fill);
-    track.appendChild(head);
-    const timeTotal = el("span", "fa-time", "0:00");
-    timeTotal.id = "fa-time-total";
-    tl.appendChild(timeNow);
-    tl.appendChild(track);
-    tl.appendChild(timeTotal);
-    rootEl.appendChild(tl);
-
-    const controls = el("div", "fa-controls");
-    const btnPlay = el("button", "btn primary", "播放");
-    btnPlay.type = "button";
-    btnPlay.id = "fa-play";
-    const btnPause = el("button", "btn", "暫停");
-    btnPause.type = "button";
-    btnPause.id = "fa-pause";
-    const btnStop = el("button", "btn", "停止");
-    btnStop.type = "button";
-    btnStop.id = "fa-stop";
-    controls.appendChild(btnPlay);
-    controls.appendChild(btnPause);
-    controls.appendChild(btnStop);
-
-    const levelLab = el("label", "", "Level");
-    const levelSel = document.createElement("select");
-    levelSel.id = "fa-level";
-    song.levels.forEach((lv) => {
-      const opt = document.createElement("option");
-      opt.value = String(lv.id);
-      opt.textContent = lv.name;
-      if (lv.id === levelId) opt.selected = true;
-      levelSel.appendChild(opt);
+    const staff = el("div", "fa-staff");
+    staff.style.height = height + "px";
+    // Five treble lines as vertical lines (score rotated: time goes down, pitch across)
+    STAFF_MIDIS.forEach((midi) => {
+      const line = el("div", "fa-staff-line");
+      line.dataset.midi = String(midi);
+      staff.appendChild(line);
     });
-    levelLab.appendChild(levelSel);
-    controls.appendChild(levelLab);
+    highwayEl.appendChild(staff);
 
-    const bpmLab = el("label", "", "速度 BPM");
-    const bpmRange = document.createElement("input");
-    bpmRange.type = "range";
-    bpmRange.id = "fa-bpm";
-    bpmRange.min = String(MIN_BPM);
-    bpmRange.max = String(MAX_BPM);
-    bpmRange.value = String(bpm);
-    const bpmVal = el("span", "", String(bpm));
-    bpmVal.id = "fa-bpm-val";
-    bpmLab.appendChild(bpmRange);
-    bpmLab.appendChild(bpmVal);
-    controls.appendChild(bpmLab);
+    const bpb = beatsPerBar();
+    const pickup = pickupBeats();
 
-    const metroLab = el("label");
-    const metro = document.createElement("input");
-    metro.type = "checkbox";
-    metro.id = "fa-metro";
-    metro.checked = metronomeOn;
-    metroLab.appendChild(metro);
-    metroLab.appendChild(document.createTextNode("拍子機"));
-    controls.appendChild(metroLab);
-    rootEl.appendChild(controls);
+    // Beat / bar grid
+    for (let i = 0; i <= total; i++) {
+      const y = i * PX_PER_BEAT;
+      const isBar = i === 0 || (i >= pickup && (i - pickup) % bpb === 0);
+      const row = el("div", "fa-grid-line" + (isBar ? " bar" : " beat"));
+      row.style.top = y + "px";
+      if (isBar) {
+        const barNum = i <= pickup ? (i === 0 ? "Pickup" : "") : String(Math.floor((i - pickup) / bpb) + 1);
+        if (barNum) {
+          const lab = el("span", "fa-bar-num", barNum === "Pickup" ? "起拍" : barNum);
+          row.appendChild(lab);
+        }
+      }
+      highwayEl.appendChild(row);
+    }
 
-    const levelSub = el("p", "fa-level-sub", "");
-    levelSub.id = "fa-level-sub";
-    rootEl.appendChild(levelSub);
+    // Section labels + chord signs
+    const prog = progression();
+    let t = 0;
+    let lastSection = null;
+    prog.forEach((ev) => {
+      if (ev.section && ev.section !== lastSection) {
+        lastSection = ev.section;
+        const sec = el("div", "fa-section-flag", ev.section);
+        sec.style.top = t * PX_PER_BEAT + "px";
+        highwayEl.appendChild(sec);
+      }
+      if (ev.chord) {
+        const ch = el("div", "fa-chord-flag", pretty(ev.chord));
+        ch.style.top = t * PX_PER_BEAT + "px";
+        ch.style.height = Math.max(ev.beats * PX_PER_BEAT - 4, 22) + "px";
+        ch.dataset.start = String(t);
+        ch.dataset.end = String(t + ev.beats);
+        highwayEl.appendChild(ch);
+      }
+      t += ev.beats;
+    });
 
-    const status = el("p", "fa-status", "");
-    status.id = "fa-status";
-    rootEl.appendChild(status);
+    // Melody notes
+    melodyNotes().forEach((n) => {
+      const note = el("div", "fa-note");
+      note.style.top = n.start * PX_PER_BEAT + "px";
+      note.style.height = Math.max(n.dur * PX_PER_BEAT - 2, 14) + "px";
+      note.dataset.midi = String(n.midi);
+      note.dataset.start = String(n.start);
+      note.dataset.end = String(n.start + n.dur);
+      const head = el("div", "fa-note-head" + (n.dur >= 2 ? " open" : ""));
+      const name = el("span", "fa-note-name", n.name.replace("#", "♯").replace("b", "♭"));
+      head.appendChild(name);
+      note.appendChild(head);
+      if (n.dur >= 0.5) {
+        const body = el("div", "fa-note-body");
+        note.appendChild(body);
+      }
+      highwayEl.appendChild(note);
+    });
 
-    const chart = el("div", "fa-chart");
-    chart.id = "fa-chart";
-    rootEl.appendChild(chart);
+    positionPitchColumns();
+    builtForLevel = levelId;
+  }
 
-    rootEl.appendChild(el("p", "fa-hint", "跟住高亮和弦，喺下面鍵盤或 MIDI 彈出和弦入面嘅音就可以得分。建議先撳「開聲」，練習可以將 BPM 調慢。"));
+  function positionPitchColumns() {
+    if (!highwayEl) return;
+    const width = highwayEl.clientWidth || highwayEl.parentElement && highwayEl.parentElement.clientWidth || 800;
+    highwayEl.querySelectorAll(".fa-staff-line").forEach((line) => {
+      const midi = Number(line.dataset.midi);
+      line.style.left = staffXFromMidi(midi, width) + "px";
+    });
+    highwayEl.querySelectorAll(".fa-note").forEach((note) => {
+      const midi = Number(note.dataset.midi);
+      const x = staffXFromMidi(midi, width);
+      note.style.left = x + "px";
+    });
   }
 
   function bind() {
-    $("fa-play").addEventListener("click", play);
-    $("fa-pause").addEventListener("click", pause);
-    $("fa-stop").addEventListener("click", () => stop({}));
-    $("fa-level").addEventListener("change", (e) => {
-      setLevel(Number(e.target.value));
-    });
-    $("fa-bpm").addEventListener("input", (e) => {
-      setBpm(Number(e.target.value), { fromSlider: true });
-    });
-    $("fa-metro").addEventListener("change", (e) => {
-      metronomeOn = !!e.target.checked;
-    });
-  }
-
-  function rebuildChart() {
-    const chart = $("fa-chart");
-    chart.innerHTML = "";
-    const prog = progression();
-    const bpb = beatsPerBar();
-    let barInRow = 0;
-    let row = null;
-    let lastSection = null;
-
-    function ensureRow() {
-      if (!row || barInRow >= 4) {
-        row = el("div", "fa-bars");
-        chart.appendChild(row);
-        barInRow = 0;
-      }
-      return row;
+    const play = $("fa-play");
+    const pause = $("fa-pause");
+    const stop = $("fa-stop");
+    const level = $("fa-level");
+    const bpmEl = $("fa-bpm");
+    const metro = $("fa-metro");
+    if (play) play.addEventListener("click", playSong);
+    if (pause) pause.addEventListener("click", pauseSong);
+    if (stop) stop.addEventListener("click", () => stopSong({}));
+    if (level) {
+      level.innerHTML = "";
+      song.levels.forEach((lv) => {
+        const opt = document.createElement("option");
+        opt.value = String(lv.id);
+        opt.textContent = lv.name;
+        if (lv.id === levelId) opt.selected = true;
+        level.appendChild(opt);
+      });
+      level.addEventListener("change", (e) => setLevel(Number(e.target.value)));
     }
-
-    prog.forEach((ev, idx) => {
-      if (ev.section && ev.section !== lastSection) {
-        lastSection = ev.section;
-        chart.appendChild(el("div", "fa-section-label", ev.section));
-        row = null;
-        barInRow = 0;
-      }
-      const span = Math.max(1, Math.round(ev.beats / bpb));
-      if (barInRow + span > 4) {
-        row = null;
-        barInRow = 0;
-      }
-      ensureRow();
-      const cell = el("div", "fa-cell", ev.chord);
-      cell.dataset.index = String(idx);
-      cell.dataset.span = String(span);
-      if (span > 1) cell.style.gridColumn = "span " + span;
-      row.appendChild(cell);
-      barInRow += span;
+    if (bpmEl) {
+      bpmEl.min = String(MIN_BPM);
+      bpmEl.max = String(MAX_BPM);
+      bpmEl.value = String(bpm);
+      bpmEl.addEventListener("input", (e) => setBpm(Number(e.target.value), { fromSlider: true }));
+    }
+    if (metro) {
+      metro.checked = metronomeOn;
+      metro.addEventListener("change", (e) => { metronomeOn = !!e.target.checked; });
+    }
+    window.addEventListener("resize", () => {
+      positionPitchColumns();
+      updateHighway();
     });
   }
 
   function updateTimeline() {
-    if (!rootEl) return;
     const total = totalBeats();
     const beat = currentBeatFloat();
     const spb = secondsPerBeat();
@@ -347,23 +338,55 @@
     const lyricCur = $("fa-lyric-current");
     const lyricNext = $("fa-lyric-next");
     const lines = lyricsList();
-    if (!lyricCur || !lyricNext) return;
-    if (!lines.length) {
-      lyricCur.textContent = "";
-      lyricCur.classList.add("empty");
-      lyricNext.textContent = "呢個 Level 暫時未有歌詞";
-      return;
+    if (lyricCur && lyricNext) {
+      if (!lines.length) {
+        lyricCur.textContent = "";
+        lyricCur.classList.add("empty");
+        lyricNext.textContent = "呢個 Level 暫時未有歌詞時間軸";
+      } else {
+        const found = lyricAtBeat(beat);
+        const curText = found.cur && found.cur.text ? found.cur.text : "";
+        const nextText = found.next && found.next.text ? found.next.text : "";
+        if (curText) {
+          lyricCur.classList.remove("empty");
+          lyricCur.textContent = curText;
+        } else {
+          lyricCur.classList.add("empty");
+          lyricCur.textContent = found.cur ? "……" : "";
+        }
+        lyricNext.textContent = nextText || (found.next ? "……" : "");
+      }
     }
-    lyricCur.classList.remove("empty");
-    const found = lyricAtBeat(beat);
-    lyricCur.textContent = found.cur && found.cur.text ? found.cur.text : "";
-    lyricNext.textContent = found.next && found.next.text ? found.next.text : "";
+  }
+
+  function updateHighway() {
+    if (!highwayEl) return;
+    const beat = currentBeatFloat();
+    const y = NOW_PAD - beat * PX_PER_BEAT;
+    highwayEl.style.transform = "translateY(" + y + "px)";
+    const hitLo = beat - 0.12;
+    const hitHi = beat + 0.18;
+    highwayEl.querySelectorAll(".fa-note").forEach((note) => {
+      const s = Number(note.dataset.start);
+      const e = Number(note.dataset.end);
+      note.classList.toggle("current", s <= beat && beat < e);
+      note.classList.toggle("hit-window", s <= hitHi && s >= hitLo);
+      note.classList.toggle("passed", e <= beat);
+    });
+    highwayEl.querySelectorAll(".fa-chord-flag").forEach((ch) => {
+      const s = Number(ch.dataset.start);
+      const e = Number(ch.dataset.end);
+      ch.classList.toggle("current", s <= beat && beat < e);
+      ch.classList.toggle("passed", e <= beat);
+    });
   }
 
   function startClock() {
     stopClock();
     const tick = () => {
       updateTimeline();
+      updateHighway();
+      highlightCurrent();
       if (state === "playing") rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -377,12 +400,12 @@
   }
 
   function render() {
-    if (!rootEl) return;
     const total = totalBeats();
     const cap = Math.min(Math.floor(currentBeatFloat()), Math.max(0, total - 1));
     const info = eventAtBeat(cap);
     const prog = progression();
     const bpb = beatsPerBar();
+    const pickup = pickupBeats();
 
     const chordEl = $("fa-now-chord");
     const sectionEl = $("fa-section");
@@ -391,58 +414,76 @@
     const statusEl = $("fa-status");
     const scoreEl = $("fa-score");
     const levelSub = $("fa-level-sub");
+    const bpmVal = $("fa-bpm-val");
 
-    scoreEl.textContent = String(score);
-    levelSub.textContent = currentLevel().subtitle || "";
+    if (scoreEl) scoreEl.textContent = String(score);
+    if (levelSub) levelSub.textContent = currentLevel().subtitle || "";
 
-    if (info) {
-      chordEl.textContent = info.ev.chord;
+    const beat = currentBeatFloat();
+    const mel = melodyAtBeat(beat);
+
+    if (info && chordEl) {
+      chordEl.textContent = info.ev.chord ? pretty(info.ev.chord) : "—";
       chordEl.classList.toggle("finished", finished);
-      sectionEl.textContent = info.ev.section || ("小節 " + (Math.floor(cap / bpb) + 1));
-      beatsEl.textContent = "拍 " + ((cap % bpb) + 1) + " / " + bpb + " · 第 " + (Math.floor(cap / bpb) + 1) + " / " + (total / bpb) + " 小節";
+      const abs = cap;
+      const afterPickup = Math.max(0, abs - pickup);
+      const bar = abs < pickup ? "起拍" : ("第 " + (Math.floor(afterPickup / bpb) + 1) + " 小節");
+      if (sectionEl) sectionEl.textContent = info.ev.section || bar;
+      if (beatsEl) {
+        const beatInBar = abs < pickup ? (abs + 1) : ((afterPickup % bpb) + 1);
+        beatsEl.textContent = (abs < pickup ? "起拍" : ("拍 " + beatInBar + " / " + bpb)) +
+          (mel ? (" · " + mel.name.replace("#", "♯").replace("b", "♭")) : "");
+      }
       const next = prog[info.index + 1];
-      nextEl.textContent = next ? ("下一粒：" + next.chord) : (finished ? "已完" : "最後一粒");
-    } else {
+      if (nextEl) {
+        const nextChord = next && next.chord ? pretty(next.chord) : "";
+        nextEl.textContent = nextChord ? ("下一粒：" + nextChord) : (finished ? "已完" : "");
+      }
+    } else if (chordEl) {
       chordEl.textContent = "—";
-      sectionEl.textContent = "";
-      beatsEl.textContent = "";
-      nextEl.textContent = "";
+      if (sectionEl) sectionEl.textContent = "";
+      if (beatsEl) beatsEl.textContent = "";
+      if (nextEl) nextEl.textContent = "";
     }
 
     const dots = $("fa-beat-dots");
-    dots.innerHTML = "";
-    for (let i = 0; i < bpb; i++) {
-      const d = el("span", "fa-dot");
-      if (i === 0) d.classList.add("accent");
-      if ((cap % bpb) === i) d.classList.add("on");
-      dots.appendChild(d);
+    if (dots) {
+      dots.innerHTML = "";
+      const afterPickup = Math.max(0, cap - pickup);
+      const pos = cap < pickup ? 0 : (afterPickup % bpb);
+      for (let i = 0; i < bpb; i++) {
+        const d = el("span", "fa-dot");
+        if (i === 0) d.classList.add("accent");
+        if (pos === i && cap >= pickup) d.classList.add("on");
+        dots.appendChild(d);
+      }
     }
 
-    if (finished) statusEl.textContent = "完成！分數：" + score + "。再撳「播放」可以由頭再練習。";
-    else if (state === "playing") statusEl.textContent = "進行中…";
-    else if (state === "paused") statusEl.textContent = "已暫停";
-    else statusEl.textContent = "";
+    if (statusEl) {
+      if (finished) statusEl.textContent = "完成！分數：" + score + "。再撳「播放」可以由頭再練習。";
+      else if (state === "playing") statusEl.textContent = "進行中…跟住而家線彈出高亮嘅音。";
+      else if (state === "paused") statusEl.textContent = "已暫停";
+      else statusEl.textContent = "";
+    }
 
-    $("fa-play").disabled = state === "playing";
-    $("fa-pause").disabled = state !== "playing";
-
-    const idx = info ? info.index : -1;
-    rootEl.querySelectorAll(".fa-cell").forEach((cell) => {
-      const i = Number(cell.dataset.index);
-      cell.classList.toggle("current", i === idx);
-      cell.classList.toggle("done", i < idx);
-    });
-
-    $("fa-bpm-val").textContent = String(bpm);
-    if (!$("fa-bpm").matches(":active")) $("fa-bpm").value = String(bpm);
-    $("fa-level").value = String(levelId);
-    $("fa-metro").checked = metronomeOn;
+    const playBtn = $("fa-play");
+    const pauseBtn = $("fa-pause");
+    if (playBtn) playBtn.disabled = state === "playing";
+    if (pauseBtn) pauseBtn.disabled = state !== "playing";
+    if (bpmVal) bpmVal.textContent = String(bpm);
+    const bpmEl = $("fa-bpm");
+    if (bpmEl && !bpmEl.matches(":active")) bpmEl.value = String(bpm);
+    const levelEl = $("fa-level");
+    if (levelEl) levelEl.value = String(levelId);
+    const metro = $("fa-metro");
+    if (metro) metro.checked = metronomeOn;
     updateTimeline();
+    updateHighway();
   }
 
   function fireBeat(index) {
     if (index >= totalBeats()) {
-      stop({ finished: true });
+      stopSong({ finished: true });
       return;
     }
     beatIndex = index;
@@ -467,11 +508,12 @@
         const delay = Math.max(0, (nextBeatTime - ctxNow) * 1000);
         setTimeout(() => {
           if (myRun !== runId || state !== "playing") return;
-          stop({ finished: true });
+          stopSong({ finished: true });
         }, delay);
         return;
       }
-      const accent = idx % beatsPerBar() === 0;
+      const pickup = pickupBeats();
+      const accent = idx >= pickup && (idx - pickup) % beatsPerBar() === 0;
       if (metronomeOn) PianoAudio.click(nextBeatTime, accent);
       const beatTime = nextBeatTime;
       const thisIdx = idx;
@@ -486,7 +528,7 @@
     timerId = setTimeout(() => schedulerTick(myRun), LOOKAHEAD_MS);
   }
 
-  function play() {
+  function playSong() {
     if (!song) return;
     PianoAudio.ensure();
     if (state === "playing") return;
@@ -518,7 +560,7 @@
     schedulerTick(myRun);
   }
 
-  function pause() {
+  function pauseSong() {
     if (state !== "playing") return;
     const pos = currentBeatFloat();
     runId += 1;
@@ -527,10 +569,9 @@
     state = "paused";
     beatIndex = pos;
     render();
-    updateTimeline();
   }
 
-  function stop(opts) {
+  function stopSong(opts) {
     opts = opts || {};
     runId += 1;
     clearTimer();
@@ -549,15 +590,14 @@
     }
     if (active) highlightCurrent();
     render();
-    updateTimeline();
   }
 
   function setLevel(id) {
     const lv = song.levels.find((l) => l.id === id);
     if (!lv) return;
     levelId = lv.id;
-    stop({});
-    rebuildChart();
+    stopSong({});
+    buildHighway();
     highlightCurrent();
     render();
   }
@@ -566,13 +606,17 @@
     const next = clampBpm(value);
     if (next === bpm) {
       if (!flags || !flags.fromSlider) render();
-      else $("fa-bpm-val").textContent = String(bpm);
+      else {
+        const bpmVal = $("fa-bpm-val");
+        if (bpmVal) bpmVal.textContent = String(bpm);
+      }
       return;
     }
     if (state === "playing") {
       const pos = currentBeatFloat();
       bpm = next;
-      $("fa-bpm-val").textContent = String(bpm);
+      const bpmVal = $("fa-bpm-val");
+      if (bpmVal) bpmVal.textContent = String(bpm);
       runId += 1;
       const myRun = runId;
       clearTimer();
@@ -583,27 +627,32 @@
       nextBeatTime = anchorAudioTime + (nextIdx - pos) * secondsPerBeat();
       schedulerTick(myRun);
       updateTimeline();
+      updateHighway();
       return;
     }
     bpm = next;
-    $("fa-bpm-val").textContent = String(bpm);
+    const bpmVal = $("fa-bpm-val");
+    if (bpmVal) bpmVal.textContent = String(bpm);
     updateTimeline();
   }
 
   function onNote(ev) {
     if (!active || !ev.down || state !== "playing") return;
-    const info = eventAtBeat(Math.floor(currentBeatFloat()));
-    if (!info) return;
-    const pcs = MusicTheory.chordPcsFromSymbol(info.ev.chord);
-    if (pcs.indexOf(ev.pc) < 0) return;
+    const beat = currentBeatFloat();
+    const info = eventAtBeat(Math.floor(beat));
+    const mel = melodyAtBeat(beat);
+    const pcs = info && info.ev.chord ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
+    const isMelody = mel && ev.pc === (((mel.midi % 12) + 12) % 12);
+    const isChord = pcs.indexOf(ev.pc) >= 0;
+    if (!isMelody && !isChord) return;
     const t = performance.now();
     const prev = lastScoreAt.get(ev.pc) || 0;
     if (t - prev < DEDUPE_MS) return;
     lastScoreAt.set(ev.pc, t);
     score += POINTS_HIT;
-    const box = rootEl.querySelector(".fa-score-box");
     const scoreEl = $("fa-score");
-    scoreEl.textContent = String(score);
+    if (scoreEl) scoreEl.textContent = String(score);
+    const box = document.querySelector(".fa-score-box");
     if (box) {
       box.classList.add("flash");
       clearTimeout(scoreFlashTimer);
@@ -613,6 +662,8 @@
 
   function activate() {
     active = true;
+    if (builtForLevel !== levelId) buildHighway();
+    positionPitchColumns();
     highlightCurrent();
     render();
   }
@@ -620,23 +671,28 @@
   function deactivate() {
     active = false;
     if (state === "playing" || state === "paused") {
-      stop({ keepScore: true });
+      stopSong({ keepScore: true });
     }
+  }
+
+  function defaultLevelId(songData) {
+    if (songData.levels.some((l) => l.id === 3)) return 3;
+    return songData.levels[songData.levels.length - 1].id;
   }
 
   function mount(container, songData) {
     rootEl = container;
+    highwayEl = container;
     song = songData;
-    levelId = song.levels[0].id;
-    bpm = clampBpm(song.defaultBpm || 76);
+    levelId = defaultLevelId(song);
+    bpm = clampBpm(song.defaultBpm || 68);
     metronomeOn = true;
     state = "stopped";
     finished = false;
     score = 0;
     beatIndex = 0;
-    buildShell();
     bind();
-    rebuildChart();
+    buildHighway();
     render();
     if (!unsubscribe && global.PianoUI && typeof PianoUI.subscribeNotes === "function") {
       unsubscribe = PianoUI.subscribeNotes(onNote);
@@ -647,8 +703,8 @@
     mount,
     activate,
     deactivate,
-    play,
-    pause,
-    stop: () => stop({})
+    play: playSong,
+    pause: pauseSong,
+    stop: () => stopSong({})
   };
 })(window);

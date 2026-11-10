@@ -1,21 +1,17 @@
-(function () {
+(function (global) {
   // MiniLab 3 = 25 keys. Default span: C3 (48) … C5 (72)
   const START_MIDI = 48;
   const KEY_COUNT = 25;
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-  const keyboard = document.getElementById("keyboard");
-  const btnAudio = document.getElementById("btn-audio");
-  const btnMidi = document.getElementById("btn-midi");
-  const midiStatus = document.getElementById("midi-status");
-  const octaveSel = document.getElementById("octave-offset");
-  const volume = document.getElementById("volume");
-
+  let keyboard = null;
   const keyEls = new Map();
   let octaveOffset = 0;
-  const held = new Set(); // sounding midi numbers (after offset)
-  let highlightPcs = new Set(); // pitch classes 0-11 from Circle of Fifths / theory
+  const held = new Set();
+  let highlightPcs = new Set();
+  let melodyMidi = null;
   const noteListeners = new Set();
+  const controlGroups = [];
 
   function isBlack(midi) {
     const n = midi % 12;
@@ -47,6 +43,7 @@
   }
 
   function buildKeyboard() {
+    if (!keyboard) return;
     keyboard.innerHTML = "";
     keyEls.clear();
 
@@ -56,10 +53,9 @@
       if (!isBlack(midi)) whites.push(midi);
     }
 
-    // White keys first (flex row)
     whites.forEach((midi) => {
       const el = document.createElement("div");
-      el.className = "key white" + (highlightPcs.has(midi % 12) ? " in-scale" : "");
+      el.className = "key white";
       el.dataset.midi = String(midi);
       el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
       bindPointer(el, midi);
@@ -67,10 +63,8 @@
       keyEls.set(midi, el);
     });
 
-    // Black keys absolute, positioned over white gaps
-    const whiteWidth = keyboard.clientWidth / Math.max(1, whites.length);
-    // Recompute after layout
     requestAnimationFrame(() => {
+      if (!keyboard) return;
       const rect = keyboard.getBoundingClientRect();
       const padLeft = 10;
       const usable = rect.width - 20;
@@ -79,8 +73,6 @@
       for (let i = 0; i < KEY_COUNT; i++) {
         const midi = START_MIDI + i;
         if (!isBlack(midi)) continue;
-        // Place above the gap between previous white and next white
-        // Find index of the white key immediately to the left
         let leftWhiteIndex = -1;
         for (let wIdx = 0; wIdx < whites.length; wIdx++) {
           if (whites[wIdx] < midi) leftWhiteIndex = wIdx;
@@ -89,7 +81,7 @@
         if (leftWhiteIndex < 0) continue;
 
         const el = document.createElement("div");
-        el.className = "key black" + (highlightPcs.has(midi % 12) ? " in-scale" : "");
+        el.className = "key black";
         el.dataset.midi = String(midi);
         el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
         const left = padLeft + (leftWhiteIndex + 1) * w - 14;
@@ -98,6 +90,7 @@
         keyboard.appendChild(el);
         keyEls.set(midi, el);
       }
+      applyHighlight();
     });
   }
 
@@ -147,7 +140,6 @@
   }
 
   function pressAbsolute(midi, velocity) {
-    // MIDI device sends absolute note numbers; map highlight back onto visible keys
     const base = midi - octaveOffset * 12;
     held.add(midi);
     if (base >= START_MIDI && base < START_MIDI + KEY_COUNT) setActive(base, true);
@@ -165,57 +157,83 @@
 
   function updateMidiStatus() {
     const s = PianoMidi.statusText();
-    midiStatus.textContent = s.text;
-    midiStatus.className = "status" + (s.cls ? " " + s.cls : "");
+    document.querySelectorAll(".midi-status").forEach((el) => {
+      el.textContent = s.text;
+      el.className = "midi-status status" + (s.cls ? " " + s.cls : "");
+    });
   }
 
-  btnAudio.addEventListener("click", async () => {
-    PianoAudio.ensure();
-    PianoAudio.setVolume(Number(volume.value));
-    btnAudio.textContent = "已開聲";
-  });
-
-  btnMidi.addEventListener("click", async () => {
-    try {
-      PianoAudio.ensure();
-      await PianoMidi.connect();
-      updateMidiStatus();
-      // refresh status periodically when devices change
-      setInterval(updateMidiStatus, 1500);
-    } catch (err) {
-      midiStatus.textContent = "MIDI：" + (err && err.message ? err.message : String(err));
-      midiStatus.className = "status err";
+  function bindControlGroup(root) {
+    const scope = root && root.querySelector ? root : document;
+    const btnAudio = scope.querySelector(".btn-audio") || scope.querySelector("#btn-audio");
+    const btnMidi = scope.querySelector(".btn-midi") || scope.querySelector("#btn-midi");
+    const octaveSel = scope.querySelector(".octave-offset") || scope.querySelector("#octave-offset");
+    const volume = scope.querySelector(".volume") || scope.querySelector("#volume");
+    if (btnAudio && !btnAudio.dataset.bound) {
+      btnAudio.dataset.bound = "1";
+      btnAudio.addEventListener("click", async () => {
+        PianoAudio.ensure();
+        const v = volume || document.querySelector(".volume, #volume");
+        if (v) PianoAudio.setVolume(Number(v.value));
+        document.querySelectorAll(".btn-audio").forEach((b) => { b.textContent = "已開聲"; });
+      });
     }
-  });
+    if (btnMidi && !btnMidi.dataset.bound) {
+      btnMidi.dataset.bound = "1";
+      btnMidi.addEventListener("click", async () => {
+        try {
+          PianoAudio.ensure();
+          await PianoMidi.connect();
+          updateMidiStatus();
+          setInterval(updateMidiStatus, 1500);
+        } catch (err) {
+          document.querySelectorAll(".midi-status").forEach((el) => {
+            el.textContent = "MIDI：" + (err && err.message ? err.message : String(err));
+            el.className = "midi-status status err";
+          });
+        }
+      });
+    }
+    if (octaveSel && !octaveSel.dataset.bound) {
+      octaveSel.dataset.bound = "1";
+      octaveSel.addEventListener("change", () => {
+        PianoAudio.allOff();
+        held.clear();
+        for (const el of keyEls.values()) el.classList.remove("active");
+        octaveOffset = Number(octaveSel.value) || 0;
+        document.querySelectorAll(".octave-offset, #octave-offset").forEach((s) => {
+          if (s !== octaveSel) s.value = String(octaveOffset);
+        });
+      });
+    }
+    if (volume && !volume.dataset.bound) {
+      volume.dataset.bound = "1";
+      volume.addEventListener("input", () => {
+        PianoAudio.setVolume(Number(volume.value));
+        document.querySelectorAll(".volume, #volume").forEach((s) => {
+          if (s !== volume) s.value = volume.value;
+        });
+      });
+    }
+    controlGroups.push(scope);
+  }
 
   PianoMidi.setHandler((midi, velocity, down) => {
     if (down) pressAbsolute(midi, velocity);
     else releaseAbsolute(midi);
   });
 
-  octaveSel.addEventListener("change", () => {
-    PianoAudio.allOff();
-    held.clear();
-    for (const el of keyEls.values()) el.classList.remove("active");
-    octaveOffset = Number(octaveSel.value) || 0;
-  });
-
-  volume.addEventListener("input", () => {
-    PianoAudio.setVolume(Number(volume.value));
-  });
-
   window.addEventListener("resize", () => {
-    // rebuild black key positions
     buildKeyboard();
   });
 
-  // Computer keyboard quick test: A S D F … mapped roughly (optional, v1 light)
   const PC_MAP = {
     KeyA: 48, KeyW: 49, KeyS: 50, KeyE: 51, KeyD: 52,
     KeyF: 53, KeyT: 54, KeyG: 55, KeyY: 56, KeyH: 57, KeyU: 58, KeyJ: 59, KeyK: 60
   };
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA")) return;
     const m = PC_MAP[e.code];
     if (m == null) return;
     press(m, 100);
@@ -226,9 +244,26 @@
     release(m);
   });
 
+  function melodyBaseMidi() {
+    if (melodyMidi == null) return null;
+    const baseExact = melodyMidi - octaveOffset * 12;
+    if (baseExact >= START_MIDI && baseExact < START_MIDI + KEY_COUNT) return baseExact;
+    // Prefer same pitch class on the visible keyboard (nearest octave).
+    const pc = ((melodyMidi % 12) + 12) % 12;
+    let best = null;
+    for (let i = 0; i < KEY_COUNT; i++) {
+      const midi = START_MIDI + i;
+      if (midi % 12 !== pc) continue;
+      if (best == null || Math.abs(midi - baseExact) < Math.abs(best - baseExact)) best = midi;
+    }
+    return best;
+  }
+
   function applyHighlight() {
+    const mel = melodyBaseMidi();
     for (const [midi, el] of keyEls) {
       el.classList.toggle("in-scale", highlightPcs.has(midi % 12));
+      el.classList.toggle("melody", mel != null && midi === mel);
     }
   }
 
@@ -237,19 +272,60 @@
     applyHighlight();
   }
 
-  function clearHighlight() {
-    highlightPcs = new Set();
+  function setMelodyMidi(midi) {
+    melodyMidi = midi == null || !Number.isFinite(midi) ? null : midi;
     applyHighlight();
   }
 
-  window.PianoUI = {
+  function setHighlights(opts) {
+    opts = opts || {};
+    if (opts.chordPcs) setHighlightPcs(opts.chordPcs);
+    else if (opts.chordPcs === null || (opts.clearChords)) highlightPcs = new Set();
+    if ("melodyMidi" in opts) setMelodyMidi(opts.melodyMidi);
+    applyHighlight();
+  }
+
+  function clearHighlight() {
+    highlightPcs = new Set();
+    melodyMidi = null;
+    applyHighlight();
+  }
+
+  function mountKeyboard(el) {
+    keyboard = el || document.getElementById("keyboard");
+    if (keyboard) buildKeyboard();
+  }
+
+  function mountControls(root) {
+    bindControlGroup(root || document);
+  }
+
+  function mount(opts) {
+    opts = opts || {};
+    if (opts.keyboard) mountKeyboard(opts.keyboard);
+    else mountKeyboard(document.getElementById("keyboard"));
+    if (opts.root) mountControls(opts.root);
+    else mountControls(document);
+  }
+
+  global.PianoUI = {
+    mount,
+    mountKeyboard,
+    mountControls,
+    rebuild: buildKeyboard,
     setHighlightPcs,
+    setMelodyMidi,
+    setHighlights,
     clearHighlight,
     subscribeNotes,
     onNoteEvent: subscribeNotes,
     getStartMidi: () => START_MIDI,
-    getKeyCount: () => KEY_COUNT
+    getKeyCount: () => KEY_COUNT,
+    getKeyboardEl: () => keyboard
   };
 
-  buildKeyboard();
-})();
+  // Auto-mount if #keyboard is already in the document.
+  if (document.getElementById("keyboard")) {
+    mount({ keyboard: document.getElementById("keyboard"), root: document });
+  }
+})(window);
