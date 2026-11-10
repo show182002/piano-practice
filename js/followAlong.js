@@ -1,7 +1,5 @@
 /* Follow-along practice: BPM clock, horizontal grand staff, karaoke slot, scoring. */
 (function (global) {
-  const POINTS_HIT = 10;
-  const DEDUPE_MS = 280;
   const LOOKAHEAD_MS = 25;
   const SCHEDULE_AHEAD = 0.12;
   const MIN_BPM = 40;
@@ -40,7 +38,6 @@
   let visibleBars = DEFAULT_BARS;
   let state = "stopped";
   let finished = false;
-  let score = 0;
   let active = false;
   let beatIndex = 0;
   let runId = 0;
@@ -50,13 +47,16 @@
   let scheduledBeatIndex = 0;
   let anchorAudioTime = 0;
   let anchorBeat = 0;
-  let unsubscribe = null;
-  const lastScoreAt = new Map();
-  let scoreFlashTimer = 0;
   let builtKey = null;
   let notationWidth = 0;
   let pxPerBeat = 48;
   let resizeObs = null;
+  let guideOn = true;
+  let muteMelody = false;
+  let muteChord = false;
+  let scrubbing = false;
+  let resumeAfterScrub = false;
+  let moreOpen = false;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -222,22 +222,29 @@
     return global.MusicTheory && MusicTheory.prettyNote ? MusicTheory.prettyNote(name) : String(name || "");
   }
 
+  function currentChordVoicing(beat) {
+    if (isIntroBeat(beat)) return [];
+    const cap = Math.min(Math.floor(beat), Math.max(0, totalBeats() - 1));
+    const info = eventAtBeat(cap);
+    if (!info || !info.ev.chord) return [];
+    return MusicTheory.chordVoicingFromSymbol(info.ev.chord, VOICE_OPTS) || [];
+  }
+
   function highlightCurrent() {
     if (!global.PianoUI) return;
     const beat = currentBeatFloat();
-    const cap = Math.min(Math.floor(beat), Math.max(0, totalBeats() - 1));
-    const info = eventAtBeat(cap);
     const mel = melodyAtBeat(beat);
-    const intro = isIntroBeat(beat);
-    const pcs = (!intro && info && info.ev.chord) ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
+    const voicing = currentChordVoicing(beat);
+    const midis = voicing.map((v) => v.midi);
     if (PianoUI.setHighlights) {
       PianoUI.setHighlights({
-        chordPcs: pcs,
+        chordMidis: midis,
         melodyMidi: mel ? mel.midi : null,
-        clearChords: intro || !pcs.length
+        clearChords: !midis.length
       });
-    } else {
-      PianoUI.setHighlightPcs(pcs);
+    } else if (PianoUI.setChordMidis) {
+      PianoUI.setChordMidis(midis);
+      if (PianoUI.setMelodyMidi) PianoUI.setMelodyMidi(mel ? mel.midi : null);
     }
   }
 
@@ -686,6 +693,218 @@
     });
   }
 
+  function cancelGuideAudio() {
+    if (global.PianoAudio && typeof PianoAudio.cancelGuide === "function") {
+      PianoAudio.cancelGuide();
+    }
+  }
+
+  function audioTimeOfBeat(beat) {
+    return anchorAudioTime + (beat - anchorBeat) * secondsPerBeat();
+  }
+
+  function chordEvents() {
+    const out = [];
+    let t = 0;
+    progression().forEach((ev) => {
+      out.push({
+        start: t,
+        dur: ev.beats,
+        chord: ev.chord || "",
+        intro: isIntroBeat(t + 0.001)
+      });
+      t += ev.beats;
+    });
+    return out;
+  }
+
+  function scheduleGuideAudio() {
+    cancelGuideAudio();
+    if (state !== "playing" || !guideOn) return;
+    if (!global.PianoAudio || typeof PianoAudio.scheduleGuide !== "function") return;
+    const fromBeat = currentBeatFloat();
+    const spb = secondsPerBeat();
+    const eps = 1e-4;
+
+    if (!muteMelody) {
+      melodyNotes().forEach((n) => {
+        const end = n.start + n.dur;
+        if (end <= fromBeat + eps) return;
+        const start = Math.max(n.start, fromBeat);
+        const durSec = (end - start) * spb;
+        if (durSec <= 0.02) return;
+        PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 104, gain: 1 });
+      });
+    }
+
+    if (!muteChord) {
+      chordEvents().forEach((ev) => {
+        if (ev.intro || !ev.chord) return;
+        const end = ev.start + ev.dur;
+        if (end <= fromBeat + eps) return;
+        const start = Math.max(ev.start, fromBeat);
+        const durSec = (end - start) * spb;
+        if (durSec <= 0.03) return;
+        const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS) || [];
+        const t = audioTimeOfBeat(start);
+        voicing.forEach((v) => {
+          PianoAudio.scheduleGuide(v.midi, t, durSec, { velocity: 78, gain: 0.52 });
+        });
+      });
+    }
+  }
+
+  function clientXOf(e) {
+    if (e.touches && e.touches.length) return e.touches[0].clientX;
+    if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
+    return e.clientX;
+  }
+
+  function beatFromPointer(e, track) {
+    const rect = track.getBoundingClientRect();
+    if (!rect.width) return 0;
+    const pct = Math.max(0, Math.min(1, (clientXOf(e) - rect.left) / rect.width));
+    return pct * totalBeats();
+  }
+
+  function seekTo(beat) {
+    const total = totalBeats();
+    const pos = Math.max(0, Math.min(total, beat));
+    if (pos >= total) {
+      finished = true;
+      beatIndex = total;
+    } else {
+      finished = false;
+      beatIndex = pos;
+    }
+    cancelGuideAudio();
+    highlightCurrent();
+    render();
+  }
+
+  function beginScrub(e, track) {
+    e.preventDefault();
+    resumeAfterScrub = state === "playing";
+    if (state === "playing") {
+      runId += 1;
+      clearTimer();
+      stopClock();
+      cancelGuideAudio();
+      const pos = currentBeatFloat();
+      state = "paused";
+      beatIndex = pos;
+    }
+    scrubbing = true;
+    try { track.setPointerCapture(e.pointerId); } catch (_) { /* older browsers */ }
+    seekTo(beatFromPointer(e, track));
+  }
+
+  function moveScrub(e, track) {
+    if (!scrubbing) return;
+    e.preventDefault();
+    seekTo(beatFromPointer(e, track));
+  }
+
+  function endScrub() {
+    if (!scrubbing) return;
+    scrubbing = false;
+    const shouldResume = resumeAfterScrub && beatIndex < totalBeats();
+    resumeAfterScrub = false;
+    if (shouldResume) playSong();
+    else render();
+  }
+
+  function bindTimeline() {
+    const track = $("fa-timeline-track");
+    if (!track || track.dataset.bound) return;
+    track.dataset.bound = "1";
+    track.setAttribute("role", "slider");
+    track.setAttribute("tabindex", "0");
+    track.setAttribute("aria-label", "播放進度");
+    track.addEventListener("pointerdown", (e) => beginScrub(e, track));
+    track.addEventListener("pointermove", (e) => moveScrub(e, track));
+    track.addEventListener("pointerup", endScrub);
+    track.addEventListener("pointercancel", endScrub);
+    track.addEventListener("keydown", (e) => {
+      const total = totalBeats();
+      let next = currentBeatFloat();
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") next -= e.shiftKey ? 0.25 : 1;
+      else if (e.key === "ArrowRight" || e.key === "ArrowUp") next += e.shiftKey ? 0.25 : 1;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = total;
+      else return;
+      e.preventDefault();
+      const wasPlaying = state === "playing";
+      if (wasPlaying) {
+        runId += 1;
+        clearTimer();
+        stopClock();
+        cancelGuideAudio();
+        state = "paused";
+      }
+      seekTo(next);
+      if (wasPlaying && beatIndex < total) playSong();
+    });
+  }
+
+  function syncHighlightToggles() {
+    if (!global.PianoUI || !PianoUI.setHighlightVisibility) return;
+    const mel = $("fa-hl-melody");
+    const ch = $("fa-hl-chord");
+    PianoUI.setHighlightVisibility({
+      melody: !mel || !!mel.checked,
+      chord: !ch || !!ch.checked
+    });
+    highlightCurrent();
+  }
+
+  function bindMoreButton() {
+    const btn = $("fa-more");
+    const panel = $("fa-more-panel");
+    if (!btn || !panel || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      moreOpen = !moreOpen;
+      panel.classList.toggle("open", moreOpen);
+      btn.setAttribute("aria-expanded", moreOpen ? "true" : "false");
+    });
+  }
+
+  function bindGuideControls() {
+    const guide = $("fa-guide");
+    const muteMel = $("fa-mute-melody");
+    const muteCh = $("fa-mute-chord");
+    const hlMel = $("fa-hl-melody");
+    const hlCh = $("fa-hl-chord");
+    if (guide && !guide.dataset.bound) {
+      guide.dataset.bound = "1";
+      guide.checked = guideOn;
+      guide.addEventListener("change", (e) => {
+        guideOn = !!e.target.checked;
+        if (state === "playing") scheduleGuideAudio();
+        else cancelGuideAudio();
+      });
+    }
+    function bindMute(el, setter) {
+      if (!el || el.dataset.bound) return;
+      el.dataset.bound = "1";
+      el.addEventListener("change", (e) => {
+        setter(!!e.target.checked);
+        if (state === "playing") scheduleGuideAudio();
+      });
+    }
+    bindMute(muteMel, (v) => { muteMelody = v; });
+    bindMute(muteCh, (v) => { muteChord = v; });
+    if (hlMel && !hlMel.dataset.bound) {
+      hlMel.dataset.bound = "1";
+      hlMel.addEventListener("change", syncHighlightToggles);
+    }
+    if (hlCh && !hlCh.dataset.bound) {
+      hlCh.dataset.bound = "1";
+      hlCh.addEventListener("change", syncHighlightToggles);
+    }
+  }
+
   function bind() {
     const play = $("fa-play");
     const pause = $("fa-pause");
@@ -722,6 +941,10 @@
       bars.value = String(visibleBars);
       bars.addEventListener("change", (e) => setVisibleBars(Number(e.target.value)));
     }
+    bindGuideControls();
+    bindMoreButton();
+    bindTimeline();
+    syncHighlightToggles();
     window.addEventListener("resize", onResize);
     if (typeof ResizeObserver === "function" && staffEl) {
       resizeObs = new ResizeObserver(() => onResize());
@@ -831,13 +1054,11 @@
     const info = eventAtBeat(cap);
     const bpb = beatsPerBar();
     const pickup = pickupBeats();
-    const scoreEl = $("fa-score");
     const statusEl = $("fa-status");
     const bpmVal = $("fa-bpm-val");
     const titleEl = $("fa-staff-title");
     const beatsEl = $("fa-beats");
 
-    if (scoreEl) scoreEl.textContent = String(score);
     if (titleEl) {
       const lv = currentLevel();
       titleEl.textContent = (song.title || "") + (lv ? " · " + lv.name : "");
@@ -857,7 +1078,8 @@
     }
 
     if (statusEl) {
-      if (finished) statusEl.textContent = "完成！分數：" + score + "。再撳「播放」可以由頭再練習。";
+      if (scrubbing) statusEl.textContent = "";
+      else if (finished) statusEl.textContent = "完成！再撳播放可以由頭再練習。";
       else if (state === "playing") statusEl.textContent = "";
       else if (state === "paused") statusEl.textContent = "已暫停";
       else statusEl.textContent = "";
@@ -865,8 +1087,19 @@
 
     const playBtn = $("fa-play");
     const pauseBtn = $("fa-pause");
-    if (playBtn) playBtn.disabled = state === "playing";
-    if (pauseBtn) pauseBtn.disabled = state !== "playing";
+    const stopBtn = $("fa-stop");
+    const playing = state === "playing";
+    if (playBtn) playBtn.disabled = playing;
+    if (pauseBtn) pauseBtn.disabled = !playing;
+    if (stopBtn) stopBtn.disabled = state === "stopped" && !finished;
+    const stage = document.querySelector(".practice-stage");
+    if (stage) stage.classList.toggle("is-playing", playing);
+    const guide = $("fa-guide");
+    if (guide) guide.checked = guideOn;
+    const muteMel = $("fa-mute-melody");
+    if (muteMel) muteMel.checked = muteMelody;
+    const muteCh = $("fa-mute-chord");
+    if (muteCh) muteCh.checked = muteChord;
     if (bpmVal) bpmVal.textContent = String(bpm);
     const bpmEl = $("fa-bpm");
     if (bpmEl && !bpmEl.matches(":active")) bpmEl.value = String(bpm);
@@ -934,8 +1167,6 @@
     if (finished || beatIndex >= totalBeats()) {
       finished = false;
       beatIndex = 0;
-      score = 0;
-      lastScoreAt.clear();
     }
     state = "playing";
     finished = false;
@@ -957,6 +1188,7 @@
     render();
     startClock();
     schedulerTick(myRun);
+    scheduleGuideAudio();
   }
 
   function pauseSong() {
@@ -965,6 +1197,7 @@
     runId += 1;
     clearTimer();
     stopClock();
+    cancelGuideAudio();
     state = "paused";
     beatIndex = pos;
     render();
@@ -975,6 +1208,7 @@
     runId += 1;
     clearTimer();
     stopClock();
+    cancelGuideAudio();
     state = "stopped";
     if (opts.finished) {
       finished = true;
@@ -982,10 +1216,6 @@
     } else {
       finished = false;
       beatIndex = 0;
-      if (!opts.keepScore) {
-        score = 0;
-        lastScoreAt.clear();
-      }
     }
     if (active) highlightCurrent();
     render();
@@ -1025,6 +1255,7 @@
       scheduledBeatIndex = nextIdx;
       nextBeatTime = anchorAudioTime + (nextIdx - pos) * secondsPerBeat();
       schedulerTick(myRun);
+      scheduleGuideAudio();
       updateTimeline();
       updateStaff();
       return;
@@ -1033,31 +1264,6 @@
     const bpmVal = $("fa-bpm-val");
     if (bpmVal) bpmVal.textContent = String(bpm);
     updateTimeline();
-  }
-
-  function onNote(ev) {
-    if (!active || !ev.down || state !== "playing") return;
-    const beat = currentBeatFloat();
-    const info = eventAtBeat(Math.floor(beat));
-    const mel = melodyAtBeat(beat);
-    const intro = isIntroBeat(beat);
-    const pcs = (!intro && info && info.ev.chord) ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
-    const isMelody = mel && ev.pc === (((mel.midi % 12) + 12) % 12);
-    const isChord = pcs.indexOf(ev.pc) >= 0;
-    if (!isMelody && !isChord) return;
-    const t = performance.now();
-    const prev = lastScoreAt.get(ev.pc) || 0;
-    if (t - prev < DEDUPE_MS) return;
-    lastScoreAt.set(ev.pc, t);
-    score += POINTS_HIT;
-    const scoreEl = $("fa-score");
-    if (scoreEl) scoreEl.textContent = String(score);
-    const box = document.querySelector(".fa-score-box");
-    if (box) {
-      box.classList.add("flash");
-      clearTimeout(scoreFlashTimer);
-      scoreFlashTimer = setTimeout(() => box.classList.remove("flash"), 180);
-    }
   }
 
   function activate() {
@@ -1090,14 +1296,13 @@
     visibleBars = DEFAULT_BARS;
     state = "stopped";
     finished = false;
-    score = 0;
     beatIndex = 0;
+    guideOn = true;
+    muteMelody = false;
+    muteChord = false;
     bind();
     buildStaff();
     render();
-    if (!unsubscribe && global.PianoUI && typeof PianoUI.subscribeNotes === "function") {
-      unsubscribe = PianoUI.subscribeNotes(onNote);
-    }
   }
 
   global.FollowAlong = {
