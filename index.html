@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.00100</title>
+  <title>鋼琴練習 · Piano Practice v0.00200</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <header class="top">
-    <h1>鋼琴練習 <span class="ver">v0.00100</span></h1>
-    <p class="hint">撳螢幕琴鍵，或接上 MIDI keyboard（例如 Arturia MiniLab 3）。撳五度圈揀調，鍵盤會亮起相關音符。</p>
+    <h1>鋼琴練習 <span class="ver">v0.00200</span></h1>
+    <p class="hint">撳「開聲」之後，可以喺「跟彈」跟住和弦練習，或者去「五度圈」揀調。亦可以撳螢幕琴鍵或接 MIDI keyboard。</p>
   </header>
 
   <section class="panel">
@@ -32,18 +32,29 @@
     </div>
   </section>
 
-  <section class="keyboard-wrap">
-    <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
+  <div class="tabs-wrap">
+    <div class="tabs" role="tablist" aria-label="練習模式">
+      <button type="button" class="tab on" role="tab" id="tab-follow" aria-controls="panel-follow" aria-selected="true">跟彈</button>
+      <button type="button" class="tab" role="tab" id="tab-cof" aria-controls="panel-cof" aria-selected="false">五度圈</button>
+    </div>
+  </div>
+
+  <section id="panel-follow" class="mode-panel panel" role="tabpanel" aria-labelledby="tab-follow">
+    <div id="follow-along"></div>
   </section>
 
-  <section class="cof-section panel">
+  <section id="panel-cof" class="mode-panel panel cof-section" role="tabpanel" aria-labelledby="tab-cof" hidden>
     <h2 class="cof-heading">五度圈</h2>
     <p class="cof-hint">撳外圈大調；內圈細字係相對小調。再撳音階／和弦，鍵盤會亮起對應鍵。</p>
     <div id="circle-of-fifths"></div>
   </section>
 
+  <section class="keyboard-wrap">
+    <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
+  </section>
+
   <footer class="foot">
-    <p>v0.00100：虛擬鍵盤 + Web Audio + Web MIDI + 五度圈（模組化）。之後可加轉調、練習模式。</p>
+    <p>v0.00200：跟彈《單車》＋五度圈＋虛擬鍵盤／MIDI（模組化）。和弦進行係練習用編曲，並非官方譜。</p>
   </footer>
 
   <script src="js/audio.js"></script>
@@ -51,8 +62,8 @@
   <script src="js/theory.js"></script>
   <script src="js/piano.js"></script>
   <script src="js/circleOfFifths.js"></script>
-  <script>
-    CircleOfFifths.mount(document.getElementById("circle-of-fifths"));
-  </script>
+  <script src="js/songs/danche.js"></script>
+  <script src="js/followAlong.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
