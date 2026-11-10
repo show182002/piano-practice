@@ -1,7 +1,8 @@
-/* Music theory helpers: pitch classes, major scale, diatonic chords, chord symbols. */
+/* Music theory helpers: pitch classes, major scale, diatonic chords, chord symbols, voicings. */
 (function (global) {
   const SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const FLAT  = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+  const LETTER_STEPS = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 
   const MAJOR_KEYS = [
     { id: "C",  name: "C",  pc: 0,  accidental: "none",  sig: 0 },
@@ -54,8 +55,7 @@
     "6": [0, 4, 7, 9],
     maj6: [0, 4, 7, 9],
     m6: [0, 3, 7, 9],
-    min6: [0, 3, 7, 9],
-    m6: [0, 3, 7, 9]
+    min6: [0, 3, 7, 9]
   };
 
   function namesFor(accidental) {
@@ -129,6 +129,10 @@
     return String(symbol || "").replace(/#/g, "♯").replace(/b/g, "♭");
   }
 
+  function prettyNote(name) {
+    return String(name || "").replace(/#/g, "♯").replace(/b/g, "♭");
+  }
+
   function parseChordSymbol(symbol) {
     const raw = String(symbol || "").trim();
     const norm = normalizeNoteName(raw);
@@ -159,11 +163,71 @@
     return parsed ? parsed.pcs.slice() : [];
   }
 
+  function diatonicIndex(raw) {
+    const p = parsePitchName(raw);
+    if (!p || p.oct == null) return null;
+    const letter = p.name.charAt(0);
+    if (LETTER_STEPS[letter] == null) return null;
+    return p.oct * 7 + LETTER_STEPS[letter];
+  }
+
+  function accidentalOf(raw) {
+    const p = parsePitchName(raw);
+    if (!p) return "";
+    if (p.name.indexOf("#") >= 0) return "#";
+    if (p.name.indexOf("b") >= 0) return "b";
+    return "";
+  }
+
+  function midiToName(midi, accidentalPref) {
+    const pc = ((midi % 12) + 12) % 12;
+    const oct = Math.floor(midi / 12) - 1;
+    return pcName(pc, accidentalPref === "flat" ? "flat" : "sharp") + oct;
+  }
+
+  function prefersFlats(parsed) {
+    const blob = [parsed.symbol, parsed.rootName, parsed.bassName].join(" ");
+    return /b|Bb|Eb|Ab|Db|Gb|m6/.test(blob) && !/#/.test(blob);
+  }
+
+  /* Compact left-hand voicing in the MiniLab 3 range (default C3–C4). */
+  function chordVoicingFromSymbol(symbol, opts) {
+    opts = opts || {};
+    const parsed = parseChordSymbol(symbol);
+    if (!parsed) return [];
+    const minM = opts.minMidi != null ? opts.minMidi : 48;
+    const maxM = opts.maxMidi != null ? opts.maxMidi : 67;
+    const bassLo = Math.max(minM, 48);
+    const bassHi = Math.min(maxM, 59);
+    const bassPc = parsed.bassPc != null ? parsed.bassPc : parsed.rootPc;
+    let bass = bassLo + ((bassPc - ((bassLo % 12) + 12) % 12) + 12) % 12;
+    if (bass > bassHi && bass - 12 >= minM) bass -= 12;
+    if (bass < minM && bass + 12 <= maxM) bass += 12;
+    if (bass > maxM && bass - 12 >= minM) bass -= 12;
+
+    const midis = [bass];
+    const others = parsed.pcs.filter((pc) => pc !== bassPc);
+    others.forEach((pc) => {
+      let m = bass + 1 + ((pc - (((bass + 1) % 12) + 12) % 12) + 12) % 12;
+      if (m === bass) m += 12;
+      if (m > maxM && m - 12 > bass && m - 12 >= minM) m -= 12;
+      if (m >= minM && m <= maxM && midis.indexOf(m) < 0) midis.push(m);
+    });
+    midis.sort((a, b) => a - b);
+    const pref = prefersFlats(parsed) ? "flat" : "sharp";
+    return midis.map((midi) => ({
+      midi,
+      name: midiToName(midi, pref),
+      pc: ((midi % 12) + 12) % 12
+    }));
+  }
+
   global.MusicTheory = {
     MAJOR_KEYS,
     SHARP,
     FLAT,
     ROOT_PC,
+    LETTER_STEPS,
     pcName,
     majorScalePcs,
     relativeMinorPc,
@@ -172,7 +236,12 @@
     normalizeNoteName,
     parsePitchName,
     prettyChord,
+    prettyNote,
     parseChordSymbol,
-    chordPcsFromSymbol
+    chordPcsFromSymbol,
+    diatonicIndex,
+    accidentalOf,
+    midiToName,
+    chordVoicingFromSymbol
   };
 })(window);

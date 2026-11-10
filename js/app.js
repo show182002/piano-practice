@@ -18,9 +18,6 @@
   }
 
   function show(id) {
-    if (id === current && id !== "practice") {
-      // still refresh visibility flags on first load
-    }
     const prev = current;
     current = id;
     if (viewHome) viewHome.hidden = id !== "home";
@@ -59,7 +56,7 @@
     });
   }
   if (global.FollowAlong && global.Songs && Songs.danche) {
-    FollowAlong.mount(document.getElementById("fa-highway"), Songs.danche);
+    FollowAlong.mount(document.getElementById("fa-staff"), Songs.danche);
   }
   if (global.CircleOfFifths) {
     CircleOfFifths.mount(document.getElementById("circle-of-fifths"), { highlight: false });
