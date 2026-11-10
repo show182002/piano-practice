@@ -1,4 +1,4 @@
-/* Follow-along practice: BPM clock, horizontal grand staff, karaoke slot, scoring. */
+/* Follow-along practice: BPM clock, horizontal grand staff, lyrics under the staff. */
 (function (global) {
   const LOOKAHEAD_MS = 25;
   const SCHEDULE_AHEAD = 0.12;
@@ -10,10 +10,11 @@
   const NS = "http://www.w3.org/2000/svg";
   const STEP = 4.5;
   const SPACE = STEP * 2;
-  const GUTTER = 62;
+  const GUTTER = 74;
   const TOP_PAD = 26;
   const MID_GAP = 42;
-  const BOTTOM_PAD = 12;
+  const BOTTOM_PAD = 26;
+  const LYRIC_Y_OFFSET = 16;
   const TREBLE_TOP = TOP_PAD;
   const TREBLE_BOTTOM = TREBLE_TOP + 4 * SPACE;
   const BASS_TOP = TREBLE_BOTTOM + MID_GAP;
@@ -450,7 +451,7 @@
       x1: GUTTER,
       y1: TREBLE_TOP - 16,
       x2: GUTTER,
-      y2: BASS_BOTTOM + 4
+      y2: BASS_BOTTOM + LYRIC_Y_OFFSET + 4
     });
     svg.appendChild(playheadEl);
 
@@ -475,12 +476,12 @@
     });
     svg.appendChild(brace);
 
-    svg.appendChild(trebleClef(28, yTreble("G4")));
-    svg.appendChild(bassClef(28, yBass("F3")));
+    svg.appendChild(trebleClef(16, yTreble("G4")));
+    svg.appendChild(bassClef(16, yBass("F3")));
 
     const kd = keyData();
     const sig = kd ? kd.key.sig : 0;
-    let cursor = 42;
+    let cursor = 46;
     const count = Math.abs(sig);
     for (let i = 0; i < count; i++) {
       const nameT = sig > 0 ? TREBLE_SHARP_Y[i] : TREBLE_FLAT_Y[i];
@@ -511,30 +512,33 @@
 
   function bracePath(x, y1, y2) {
     const mid = (y1 + y2) / 2;
-    return "M " + (x + 4) + " " + y1 +
-      " C " + (x - 6) + " " + (y1 + 10) + ", " + (x - 6) + " " + (mid - 14) + ", " + (x + 1) + " " + mid +
-      " C " + (x - 6) + " " + (mid + 14) + ", " + (x - 6) + " " + (y2 - 10) + ", " + (x + 4) + " " + y2 +
-      " C " + (x - 2) + " " + (y2 - 12) + ", " + (x - 2) + " " + (mid + 16) + ", " + (x + 5) + " " + mid +
-      " C " + (x - 2) + " " + (mid - 16) + ", " + (x - 2) + " " + (y1 + 12) + ", " + (x + 4) + " " + y1;
+    const h = y2 - y1;
+    return "M " + (x + 5) + " " + y1 +
+      " C " + (x - 8) + " " + (y1 + h * 0.14) + ", " + (x - 8) + " " + (mid - 18) + ", " + (x + 6) + " " + mid +
+      " C " + (x - 8) + " " + (mid + 18) + ", " + (x - 8) + " " + (y2 - h * 0.14) + ", " + (x + 5) + " " + y2 +
+      " C " + (x + 1.5) + " " + (y2 - h * 0.16) + ", " + (x + 1.5) + " " + (mid + 20) + ", " + (x + 11) + " " + mid +
+      " C " + (x + 1.5) + " " + (mid - 20) + ", " + (x + 1.5) + " " + (y1 + h * 0.16) + ", " + (x + 5) + " " + y1 +
+      " Z";
   }
 
+  /* Public-domain G-clef / F-clef outlines (Wikimedia File:Treble_clef.svg and
+     File:Bass_clef.svg by Tlusťa, released into the public domain), rescaled
+     so 1 unit = 1 staff space and y=0 sits on G4 / F3. */
   function trebleClef(x, gLineY) {
-    const g = svgEl("g", { class: "fa-clef fa-treble", transform: "translate(" + x + " " + gLineY + ")" });
-    g.appendChild(svgEl("path", {
-      class: "fa-clef-path",
-      d: "M 1.5 -2 C 1.5 -10 10 -13 10 -5 C 10 6 -3 7 -3 -2 C -3 -12 12 -10 12 2 C 12 14 2 22 2 30 C 2 36 8 37 8 31 C 8 27 4 27 4 31 C 4 34 7 34 7 31 M 1.5 -2 C 1.5 4 7 5 7 -2 C 7 -7 3 -7 3 -2"
-    }));
+    const g = svgEl("g", {
+      class: "fa-clef fa-treble",
+      transform: "translate(" + x + " " + gLineY + ") scale(" + SPACE + ")"
+    });
+    g.appendChild(svgEl("path", { class: "fa-clef-path", d: "M 1.382 -0.505 C 1.279 -0.476 1.186 -0.412 1.1 -0.313 C 1.013 -0.213 0.971 -0.103 0.971 0.015 C 0.971 0.09 0.996 0.174 1.045 0.264 C 1.094 0.356 1.169 0.422 1.265 0.464 C 1.298 0.471 1.313 0.488 1.313 0.511 C 1.313 0.52 1.301 0.528 1.272 0.535 C 1.118 0.496 0.991 0.413 0.893 0.29 C 0.795 0.164 0.744 0.022 0.741 -0.141 C 0.746 -0.315 0.798 -0.478 0.898 -0.627 C 1 -0.777 1.13 -0.884 1.289 -0.947 L 1.172 -1.548 C 0.912 -1.331 0.7 -1.106 0.536 -0.869 C 0.371 -0.633 0.287 -0.378 0.28 -0.102 C 0.283 0.022 0.309 0.142 0.356 0.257 C 0.404 0.374 0.475 0.479 0.569 0.576 C 0.761 0.767 1.01 0.867 1.313 0.877 C 1.416 0.87 1.526 0.852 1.645 0.821 L 1.382 -0.505 Z M 1.504 -0.522 L 1.768 0.781 C 2.029 0.676 2.16 0.447 2.16 0.098 C 2.144 -0.019 2.111 -0.124 2.053 -0.217 C 1.997 -0.312 1.923 -0.386 1.828 -0.44 C 1.733 -0.494 1.626 -0.522 1.504 -0.522 Z M 1.157 -2.283 C 1.213 -2.317 1.277 -2.376 1.347 -2.459 C 1.416 -2.54 1.484 -2.637 1.548 -2.745 C 1.614 -2.855 1.667 -2.967 1.706 -3.08 C 1.745 -3.192 1.763 -3.299 1.763 -3.397 C 1.763 -3.439 1.76 -3.482 1.752 -3.519 C 1.745 -3.58 1.726 -3.627 1.694 -3.66 C 1.662 -3.69 1.621 -3.707 1.57 -3.707 C 1.469 -3.707 1.377 -3.644 1.296 -3.519 C 1.233 -3.411 1.181 -3.282 1.144 -3.136 C 1.105 -2.989 1.083 -2.843 1.079 -2.696 C 1.088 -2.528 1.115 -2.391 1.157 -2.283 Z M 1.05 -2.185 C 0.974 -2.459 0.932 -2.738 0.923 -3.023 C 0.925 -3.206 0.944 -3.377 0.979 -3.536 C 1.013 -3.695 1.062 -3.832 1.127 -3.951 C 1.189 -4.069 1.262 -4.159 1.343 -4.22 C 1.416 -4.274 1.469 -4.303 1.498 -4.303 C 1.52 -4.303 1.538 -4.295 1.555 -4.279 C 1.572 -4.264 1.594 -4.239 1.621 -4.205 C 1.823 -3.919 1.924 -3.573 1.924 -3.17 C 1.924 -2.979 1.899 -2.793 1.848 -2.606 C 1.799 -2.422 1.726 -2.246 1.63 -2.081 C 1.531 -1.915 1.416 -1.771 1.282 -1.648 L 1.42 -0.981 C 1.494 -0.989 1.545 -0.996 1.574 -0.996 C 1.702 -0.996 1.818 -0.969 1.924 -0.914 C 2.031 -0.86 2.122 -0.787 2.197 -0.694 C 2.271 -0.603 2.329 -0.498 2.37 -0.379 C 2.409 -0.261 2.431 -0.137 2.431 -0.008 C 2.431 0.191 2.378 0.374 2.273 0.539 C 2.168 0.703 2.011 0.823 1.799 0.901 C 1.812 0.984 1.836 1.104 1.872 1.258 C 1.906 1.414 1.931 1.538 1.948 1.629 C 1.965 1.721 1.972 1.809 1.972 1.895 C 1.972 2.029 1.94 2.147 1.875 2.252 C 1.809 2.357 1.721 2.439 1.609 2.496 C 1.499 2.554 1.377 2.583 1.245 2.583 C 1.059 2.583 0.896 2.53 0.757 2.427 C 0.619 2.322 0.544 2.181 0.537 2.002 C 0.542 1.922 0.561 1.848 0.595 1.776 C 0.629 1.705 0.674 1.648 0.734 1.604 C 0.791 1.558 0.861 1.534 0.94 1.529 C 1.006 1.529 1.069 1.548 1.128 1.583 C 1.186 1.621 1.233 1.67 1.269 1.732 C 1.303 1.795 1.321 1.865 1.321 1.939 C 1.321 2.039 1.288 2.124 1.22 2.193 C 1.152 2.262 1.066 2.298 0.962 2.298 L 0.923 2.298 C 0.989 2.4 1.098 2.452 1.249 2.452 C 1.325 2.452 1.403 2.435 1.481 2.405 C 1.56 2.373 1.626 2.33 1.682 2.276 C 1.738 2.222 1.775 2.164 1.79 2.103 C 1.819 2.034 1.833 1.937 1.833 1.817 C 1.833 1.736 1.824 1.655 1.809 1.573 C 1.794 1.494 1.77 1.387 1.738 1.255 C 1.706 1.124 1.682 1.023 1.669 0.953 C 1.567 0.979 1.462 0.992 1.352 0.992 C 1.167 0.992 0.993 0.955 0.829 0.879 C 0.664 0.803 0.52 0.698 0.395 0.562 C 0.271 0.427 0.175 0.274 0.105 0.102 C 0.038 -0.069 0.002 -0.249 0 -0.435 C 0.007 -0.608 0.039 -0.774 0.1 -0.93 C 0.161 -1.087 0.239 -1.236 0.336 -1.375 C 0.432 -1.514 0.532 -1.641 0.636 -1.754 C 0.741 -1.866 0.878 -2.01 1.05 -2.185 Z" }));
     return g;
   }
 
   function bassClef(x, fLineY) {
-    const g = svgEl("g", { class: "fa-clef fa-bass", transform: "translate(" + x + " " + fLineY + ")" });
-    g.appendChild(svgEl("path", {
-      class: "fa-clef-path",
-      d: "M -6 2 C -6 -10 10 -12 10 -2 C 10 8 -1 12 -1 20 L -6 20 C -6 12 4 10 4 -1 C 4 -7 -2 -7 -2 2 Z"
-    }));
-    g.appendChild(svgEl("circle", { class: "fa-clef-dot", cx: 14, cy: -4.5, r: 1.5 }));
-    g.appendChild(svgEl("circle", { class: "fa-clef-dot", cx: 14, cy: 4.5, r: 1.5 }));
+    const g = svgEl("g", {
+      class: "fa-clef fa-bass",
+      transform: "translate(" + x + " " + fLineY + ") scale(" + SPACE + ")"
+    });
+    g.appendChild(svgEl("path", { class: "fa-clef-path", d: "M 0 2.163 C 0.268 1.981 0.468 1.844 0.596 1.749 C 0.725 1.656 0.861 1.539 0.999 1.401 C 1.138 1.262 1.255 1.104 1.35 0.93 C 1.424 0.801 1.489 0.652 1.541 0.483 C 1.594 0.315 1.621 0.152 1.626 -0.002 C 1.626 -0.146 1.607 -0.283 1.568 -0.412 C 1.531 -0.542 1.467 -0.649 1.375 -0.735 C 1.284 -0.82 1.165 -0.862 1.018 -0.862 C 0.876 -0.862 0.742 -0.833 0.617 -0.777 C 0.493 -0.72 0.405 -0.628 0.356 -0.5 C 0.356 -0.488 0.349 -0.472 0.339 -0.45 C 0.342 -0.423 0.356 -0.403 0.381 -0.388 C 0.407 -0.373 0.429 -0.366 0.449 -0.366 C 0.459 -0.366 0.488 -0.371 0.532 -0.381 C 0.578 -0.391 0.615 -0.398 0.645 -0.398 C 0.735 -0.398 0.815 -0.366 0.888 -0.303 C 0.959 -0.24 0.994 -0.164 0.994 -0.075 C 0.994 -0.01 0.976 0.051 0.94 0.107 C 0.905 0.163 0.855 0.208 0.793 0.24 C 0.73 0.274 0.661 0.29 0.586 0.29 C 0.451 0.29 0.336 0.249 0.241 0.166 C 0.148 0.081 0.1 -0.025 0.1 -0.159 C 0.1 -0.33 0.153 -0.478 0.256 -0.603 C 0.361 -0.728 0.493 -0.821 0.656 -0.884 C 0.816 -0.948 0.979 -0.979 1.145 -0.979 C 1.326 -0.979 1.499 -0.933 1.66 -0.84 C 1.822 -0.749 1.949 -0.622 2.044 -0.464 C 2.139 -0.305 2.188 -0.135 2.188 0.047 C 2.188 0.373 2.08 0.674 1.863 0.953 C 1.646 1.233 1.379 1.475 1.059 1.682 C 0.845 1.822 0.5 2.012 0.024 2.251 L 0 2.163 Z M 2.352 -0.457 C 2.352 -0.518 2.374 -0.569 2.419 -0.61 C 2.461 -0.652 2.513 -0.672 2.576 -0.672 C 2.63 -0.672 2.681 -0.649 2.727 -0.603 C 2.772 -0.559 2.794 -0.506 2.794 -0.449 C 2.794 -0.388 2.771 -0.335 2.727 -0.293 C 2.679 -0.252 2.627 -0.232 2.568 -0.232 C 2.505 -0.232 2.454 -0.252 2.413 -0.298 C 2.373 -0.342 2.352 -0.395 2.352 -0.457 Z M 2.352 0.43 C 2.352 0.369 2.374 0.317 2.415 0.276 C 2.457 0.234 2.51 0.213 2.576 0.213 C 2.63 0.213 2.679 0.235 2.727 0.281 C 2.771 0.327 2.794 0.376 2.794 0.43 C 2.794 0.496 2.772 0.549 2.73 0.591 C 2.686 0.633 2.635 0.655 2.576 0.655 C 2.51 0.655 2.457 0.633 2.415 0.593 C 2.374 0.552 2.352 0.498 2.352 0.43 Z" }));
     return g;
   }
 
@@ -671,6 +675,45 @@
       if (isDotted(n.dur)) g.appendChild(drawDot(cx, cy));
       scrollG.appendChild(g);
     });
+
+    drawLyricsUnderStaff();
+  }
+
+  function drawLyricsUnderStaff() {
+    const y = BASS_BOTTOM + LYRIC_Y_OFFSET;
+    const total = totalBeats();
+    const lines = lyricsList();
+    let i = 0;
+    while (i < total) {
+      if (isIntroBeat(i + 0.001)) {
+        const info = eventAtBeat(i);
+        const label = (info && info.ev && info.ev.section) ? info.ev.section : "前奏";
+        const start = i;
+        while (i < total && isIntroBeat(i + 0.001)) i++;
+        scrollG.appendChild(svgEl("text", {
+          class: "fa-under-lyric intro",
+          x: xOfBeat(start) + 4,
+          y: y,
+          "data-start": String(start),
+          "data-end": String(i)
+        }, label));
+      } else {
+        i++;
+      }
+    }
+    lines.forEach((line, idx) => {
+      if (isIntroBeat(line.startBeat + 0.001)) return;
+      const start = line.startBeat;
+      const end = (idx + 1 < lines.length) ? lines[idx + 1].startBeat : total;
+      const text = line.text ? line.text : "……";
+      scrollG.appendChild(svgEl("text", {
+        class: "fa-under-lyric" + (line.text ? "" : " empty"),
+        x: xOfBeat(start) + 3,
+        y: y,
+        "data-start": String(start),
+        "data-end": String(end)
+      }, text));
+    });
   }
 
   function updateStaff() {
@@ -684,7 +727,7 @@
 
     const hitLo = beat - 0.12;
     const hitHi = beat + 0.18;
-    staffEl.querySelectorAll(".fa-mnote, .fa-cnotes, .fa-chord-sym").forEach((node) => {
+    staffEl.querySelectorAll(".fa-mnote, .fa-cnotes, .fa-chord-sym, .fa-under-lyric").forEach((node) => {
       const s = Number(node.dataset.start);
       const e = Number(node.dataset.end);
       node.classList.toggle("current", s <= beat && beat < e);

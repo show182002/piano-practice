@@ -1,7 +1,8 @@
 (function (global) {
   // MiniLab 3 = 25 keys. Default span: C3 (48) … C5 (72)
   // Key widths are locked to fixed pixels and never flex/stretch with the viewport.
-  // A single proportional scale (70%–160%) grows or shrinks the whole keyboard together.
+  // A single proportional scale grows or shrinks the whole keyboard together.
+  // Minimum 70%. Maximum fills the available width (at least 280%, cap 450%).
   const START_MIDI = 48;
   const KEY_COUNT = 25;
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -17,9 +18,11 @@
     LABEL: 0.62
   };
   const SCALE_MIN = 0.7;
-  const SCALE_MAX = 1.6;
+  const SCALE_MAX_FLOOR = 2.8;
+  const SCALE_MAX_CEIL = 4.5;
   const SCALE_DEFAULT = 1;
   const SCALE_STORAGE = "piano-practice-key-scale";
+  const REVERB_STORAGE = "piano-practice-reverb";
 
   let keyboard = null;
   const keyEls = new Map();
@@ -49,7 +52,7 @@
   function clampScale(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return SCALE_DEFAULT;
-    return Math.max(SCALE_MIN, Math.min(SCALE_MAX, n));
+    return Math.max(SCALE_MIN, Math.min(scaleMax(), n));
   }
 
   function metrics() {
@@ -91,6 +94,19 @@
       WHITE_GAP: BASE.WHITE_GAP,
       PAD_X: BASE.PAD_X
     });
+  }
+
+  function availableWidth() {
+    const wrap = keyboard && keyboard.parentElement;
+    if (wrap && wrap.clientWidth) return Math.max(120, wrap.clientWidth - 8);
+    return Math.max(120, window.innerWidth - 24);
+  }
+
+  function scaleMax() {
+    const base = unscaledWidth();
+    const fill = base ? availableWidth() / base : SCALE_MAX_FLOOR;
+    if (!Number.isFinite(fill) || fill <= 0) return SCALE_MAX_FLOOR;
+    return Math.max(SCALE_MAX_FLOOR, Math.min(SCALE_MAX_CEIL, fill));
   }
 
   function emitNote(midi, velocity, down) {
@@ -263,8 +279,12 @@
       btnAudio.dataset.bound = "1";
       btnAudio.addEventListener("click", async () => {
         PianoAudio.ensure();
+        PianoAudio.loadSamples && PianoAudio.loadSamples();
         const v = volume || document.querySelector(".volume, #volume");
         if (v) PianoAudio.setVolume(Number(v.value));
+        const r = scope.querySelector(".reverb, #fa-reverb") || document.querySelector(".reverb, #fa-reverb");
+        if (r) PianoAudio.setReverb(Number(r.value));
+        else if (PianoAudio.getReverb) PianoAudio.setReverb(PianoAudio.getReverb());
         document.querySelectorAll(".btn-audio").forEach((b) => { b.textContent = "已開聲"; });
       });
     }
@@ -303,6 +323,18 @@
         PianoAudio.setVolume(Number(volume.value));
         document.querySelectorAll(".volume, #volume").forEach((s) => {
           if (s !== volume) s.value = volume.value;
+        });
+      });
+    }
+    const reverb = scope.querySelector(".reverb") || scope.querySelector("#fa-reverb");
+    if (reverb && !reverb.dataset.bound) {
+      reverb.dataset.bound = "1";
+      const initial = PianoAudio.getReverb ? PianoAudio.getReverb() : 40;
+      reverb.value = String(initial);
+      reverb.addEventListener("input", () => {
+        PianoAudio.setReverb(Number(reverb.value));
+        document.querySelectorAll(".reverb, #fa-reverb").forEach((s) => {
+          if (s !== reverb) s.value = reverb.value;
         });
       });
     }
@@ -469,6 +501,13 @@
   }
 
   function onViewportChange() {
+    const cap = scaleMax();
+    if (keyScale > cap + 0.0001) {
+      keyScale = cap;
+      if (keyboard) buildKeyboard();
+      syncScaleSlider();
+      return;
+    }
     if (!scaleUserSet) {
       const narrow = window.matchMedia && (
         window.matchMedia("(max-width: 950px)").matches ||
@@ -482,12 +521,16 @@
         return;
       }
     }
+    syncScaleSlider();
     syncWrapAlignment();
   }
 
   function syncScaleSlider() {
     const pct = Math.round(keyScale * 100);
+    const maxPct = Math.round(scaleMax() * 100);
     document.querySelectorAll("#fa-key-scale").forEach((el) => {
+      el.min = String(Math.round(SCALE_MIN * 100));
+      el.max = String(maxPct);
       if (!el.matches(":active")) el.value = String(pct);
     });
     document.querySelectorAll("#fa-key-scale-val").forEach((el) => {
@@ -501,7 +544,7 @@
     if (!slider || slider.dataset.bound) return;
     slider.dataset.bound = "1";
     slider.min = String(Math.round(SCALE_MIN * 100));
-    slider.max = String(Math.round(SCALE_MAX * 100));
+    slider.max = String(Math.round(scaleMax() * 100));
     slider.value = String(Math.round(keyScale * 100));
     slider.addEventListener("input", () => {
       setScale(Number(slider.value) / 100, { user: true });
@@ -521,6 +564,29 @@
     bindScaleControl(root || document);
   }
 
+  function formatSampleStatus(info) {
+    if (!info) return { text: "", cls: "" };
+    if (info.state === "loading") {
+      const n = info.loaded || 0;
+      const total = info.total || 30;
+      return { text: "鋼琴音色載入中（" + n + "/" + total + "）…", cls: "warn" };
+    }
+    if (info.state === "ready") return { text: "鋼琴音色已載入", cls: "ok" };
+    if (info.state === "error") {
+      if (info.loaded) return { text: "部分音色已載入，其餘暫用電子波", cls: "warn" };
+      return { text: "音色載入失敗，改用電子波", cls: "err" };
+    }
+    return { text: "", cls: "" };
+  }
+
+  function syncSampleStatus(info) {
+    const s = formatSampleStatus(info);
+    document.querySelectorAll("[data-sample-status]").forEach((el) => {
+      el.textContent = s.text;
+      el.className = "sample-status status" + (s.cls ? " " + s.cls : "");
+    });
+  }
+
   function mount(opts) {
     opts = opts || {};
     initScale();
@@ -529,6 +595,9 @@
     if (opts.root) mountControls(opts.root);
     else mountControls(document);
     syncScaleSlider();
+    if (global.PianoAudio && typeof PianoAudio.onStatus === "function") {
+      PianoAudio.onStatus(syncSampleStatus);
+    }
   }
 
   window.addEventListener("resize", onViewportChange);
