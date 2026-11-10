@@ -3,6 +3,7 @@
   let selectedKeyId = "C";
   let selectedChordIdx = null; // null = show whole scale
   let rootEl = null;
+  let lastPcs = [];
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -42,9 +43,10 @@
     keys.forEach((key, i) => {
       const a0 = i * slice;
       const a1 = (i + 1) * slice;
+      const selected = key.id === selectedKeyId;
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", wedgePath(cx, cy, rInner, rOuter, a0, a1));
-      path.setAttribute("class", "cof-slice" + (key.id === selectedKeyId ? " selected" : ""));
+      path.setAttribute("class", "cof-slice" + (selected ? " selected" : ""));
       path.dataset.keyId = key.id;
       path.addEventListener("click", () => selectKey(key.id));
       svg.appendChild(path);
@@ -56,7 +58,7 @@
       text.setAttribute("y", labelPos.y);
       text.setAttribute("text-anchor", "middle");
       text.setAttribute("dominant-baseline", "middle");
-      text.setAttribute("class", "cof-label");
+      text.setAttribute("class", "cof-label" + (selected ? " selected" : ""));
       text.textContent = key.name;
       text.style.pointerEvents = "none";
       svg.appendChild(text);
@@ -152,9 +154,19 @@
   }
 
   function highlightPcs(pcs) {
+    lastPcs = pcs || [];
     if (global.PianoUI && typeof global.PianoUI.setHighlightPcs === "function") {
-      global.PianoUI.setHighlightPcs(pcs);
+      global.PianoUI.setHighlightPcs(lastPcs);
     }
+  }
+
+  function currentPcs() {
+    if (lastPcs && lastPcs.length) return lastPcs;
+    const info = MusicTheory.keyInfo(selectedKeyId);
+    if (selectedChordIdx != null && info.chords[selectedChordIdx]) {
+      return info.chords[selectedChordIdx].pcs;
+    }
+    return info.scalePcs;
   }
 
   function selectKey(keyId) {
@@ -170,7 +182,15 @@
     highlightPcs(info.scalePcs);
   }
 
-  function mount(container) {
+  function activate() {
+    highlightPcs(currentPcs());
+  }
+
+  function deactivate() {
+    // Keep selection; highlights are overwritten by the other mode.
+  }
+
+  function mount(container, opts) {
     rootEl = container;
     rootEl.classList.add("cof-root");
     rootEl.innerHTML = "";
@@ -190,8 +210,11 @@
 
     buildWheel(svg);
     renderDetails(details);
-    highlightPcs(MusicTheory.keyInfo(selectedKeyId).scalePcs);
+    lastPcs = MusicTheory.keyInfo(selectedKeyId).scalePcs;
+    if (!opts || opts.highlight !== false) {
+      highlightPcs(lastPcs);
+    }
   }
 
-  global.CircleOfFifths = { mount, selectKey };
+  global.CircleOfFifths = { mount, selectKey, activate, deactivate };
 })(window);

@@ -1,4 +1,4 @@
-/* Music theory helpers: pitch classes, major scale, diatonic chords. */
+/* Music theory helpers: pitch classes, major scale, diatonic chords, chord symbols. */
 (function (global) {
   // Prefer sharps for sharp keys, flats for flat keys
   const SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -31,6 +31,29 @@
     { roman: "vi",  quality: "min",  intervals: [0, 3, 7] },
     { roman: "vii°", quality: "dim", intervals: [0, 3, 6] }
   ];
+
+  const ROOT_PC = {
+    C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4,
+    F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9, "A#": 10, Bb: 10, B: 11
+  };
+
+  const QUALITY_INTERVALS = {
+    "": [0, 4, 7],
+    maj: [0, 4, 7],
+    M: [0, 4, 7],
+    m: [0, 3, 7],
+    min: [0, 3, 7],
+    mi: [0, 3, 7],
+    dim: [0, 3, 6],
+    "°": [0, 3, 6],
+    aug: [0, 4, 8],
+    "+": [0, 4, 8],
+    "7": [0, 4, 7, 10],
+    maj7: [0, 4, 7, 11],
+    M7: [0, 4, 7, 11],
+    m7: [0, 3, 7, 10],
+    min7: [0, 3, 7, 10]
+  };
 
   function namesFor(accidental) {
     return accidental === "flat" ? FLAT : SHARP;
@@ -84,6 +107,27 @@
     return Math.abs(sig) + " 個降號";
   }
 
+  function parseChordSymbol(symbol) {
+    const raw = String(symbol || "").trim();
+    const m = raw.match(/^([A-G](?:#|b)?)(.*)$/);
+    if (!m) return null;
+    const rootName = m[1];
+    const rootPc = ROOT_PC[rootName];
+    if (rootPc == null) return null;
+    let quality = (m[2] || "").trim();
+    // Normalise a few aliases; ignore slash-bass for pitch-class sets (C/E → C)
+    const slash = quality.indexOf("/");
+    if (slash >= 0) quality = quality.slice(0, slash).trim();
+    const intervals = QUALITY_INTERVALS[quality] || QUALITY_INTERVALS[""];
+    const pcs = intervals.map((i) => (rootPc + i) % 12);
+    return { symbol: raw, rootName, rootPc, quality, pcs };
+  }
+
+  function chordPcsFromSymbol(symbol) {
+    const parsed = parseChordSymbol(symbol);
+    return parsed ? parsed.pcs.slice() : [];
+  }
+
   global.MusicTheory = {
     MAJOR_KEYS,
     SHARP,
@@ -92,6 +136,8 @@
     majorScalePcs,
     relativeMinorPc,
     keyInfo,
-    signatureLabel
+    signatureLabel,
+    parseChordSymbol,
+    chordPcsFromSymbol
   };
 })(window);

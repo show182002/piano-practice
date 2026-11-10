@@ -16,6 +16,10 @@
     return ctx;
   }
 
+  function now() {
+    return ensure().currentTime;
+  }
+
   function midiToHz(midi) {
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
@@ -77,5 +81,22 @@
     for (const midi of [...active.keys()]) noteOff(midi, true);
   }
 
-  global.PianoAudio = { ensure, noteOn, noteOff, allOff, setVolume };
+  /** Metronome click. `time` is AudioContext time; accent = downbeat. */
+  function click(time, accent) {
+    ensure();
+    const t = time == null ? ctx.currentTime : time;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(accent ? 1400 : 900, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(accent ? 0.16 : 0.1, t + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.07 : 0.05));
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.08);
+  }
+
+  global.PianoAudio = { ensure, now, noteOn, noteOff, allOff, setVolume, click };
 })(window);

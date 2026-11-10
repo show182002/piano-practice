@@ -15,6 +15,7 @@
   let octaveOffset = 0;
   const held = new Set(); // sounding midi numbers (after offset)
   let highlightPcs = new Set(); // pitch classes 0-11 from Circle of Fifths / theory
+  const noteListeners = new Set();
 
   function isBlack(midi) {
     const n = midi % 12;
@@ -25,6 +26,24 @@
     const name = NOTE_NAMES[midi % 12];
     const oct = Math.floor(midi / 12) - 1;
     return name + oct;
+  }
+
+  function emitNote(midi, velocity, down) {
+    const ev = {
+      midi,
+      velocity: velocity == null ? 0 : velocity,
+      down: !!down,
+      pc: ((midi % 12) + 12) % 12
+    };
+    for (const fn of noteListeners) {
+      try { fn(ev); } catch (_) { /* listener error */ }
+    }
+  }
+
+  function subscribeNotes(fn) {
+    if (typeof fn !== "function") return function () {};
+    noteListeners.add(fn);
+    return function () { noteListeners.delete(fn); };
   }
 
   function buildKeyboard() {
@@ -115,6 +134,7 @@
     held.add(midi);
     setActive(baseMidi, true);
     PianoAudio.noteOn(midi, velocity);
+    emitNote(midi, velocity, true);
   }
 
   function release(baseMidi) {
@@ -123,6 +143,7 @@
     held.delete(midi);
     setActive(baseMidi, false);
     PianoAudio.noteOff(midi, false);
+    emitNote(midi, 0, false);
   }
 
   function pressAbsolute(midi, velocity) {
@@ -131,6 +152,7 @@
     held.add(midi);
     if (base >= START_MIDI && base < START_MIDI + KEY_COUNT) setActive(base, true);
     PianoAudio.noteOn(midi, velocity);
+    emitNote(midi, velocity, true);
   }
 
   function releaseAbsolute(midi) {
@@ -138,6 +160,7 @@
     const base = midi - octaveOffset * 12;
     if (base >= START_MIDI && base < START_MIDI + KEY_COUNT) setActive(base, false);
     PianoAudio.noteOff(midi, false);
+    emitNote(midi, 0, false);
   }
 
   function updateMidiStatus() {
@@ -222,6 +245,8 @@
   window.PianoUI = {
     setHighlightPcs,
     clearHighlight,
+    subscribeNotes,
+    onNoteEvent: subscribeNotes,
     getStartMidi: () => START_MIDI,
     getKeyCount: () => KEY_COUNT
   };
