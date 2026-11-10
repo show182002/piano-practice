@@ -1,35 +1,36 @@
 # 鋼琴練習 · Piano Practice
 
-簡單網上鋼琴練習（`v0.00300`）。
+簡單網上鋼琴練習（`v0.01300`）。
 
 線上：https://piano-practice-ksoc.netlify.app/
 
 ## 功能
-- 螢幕虛擬鋼琴（25 鍵，對齊 Arturia MiniLab 3 音域：C3–C5）
-- Web Audio 出聲（無需外部音色檔）
-- Web MIDI：接 USB MIDI keyboard 可同步亮鍵 + 出聲
-- **跟彈**：以《單車》（陳奕迅）練習用編曲（**G 大調**：G–Em–C–D），跟 BPM 行一條會走嘅 timeline、顯示歌詞、拍子機、簡單得分；三個 Chord Level
-- **五度圈**：揀大調 → 顯示音階、常用和弦、相對小調；鍵盤亮起相關音符
-- 八度偏移、音量
-- 電腦鍵盤簡易試彈（A/W/S/E/D…）
+- 選歌之後先入練習頁（唔再把選歌、五度圈、譜、鍵盤全部塞喺同一頁）
+- 練習介面將 MIDI／虛擬鍵盤 **鎖死喺畫面頂**（夠高、清楚看見 25 鍵 MiniLab 3 音域 C3–C5）；譜、旋律同提示由下面向上捲，好似 Excel freeze pane／教學 app／音遊
+- 螢幕虛擬鋼琴、Web Audio 出聲、Web MIDI（接 USB keyboard 可同步亮鍵 + 出聲）
+- **跟彈《單車》**（陳奕迅；練習用編曲，G 大調）。預設 **Level 3**：跟 C_Zhukov 簡易鋼琴譜第 1 頁（pickup＋第 1–30 小節）寫上單音旋律同小節中間嘅 slash chord。第 2 頁（第 31–56 小節）未有收入
+- 卡拉 OK 式歌詞槽（而家呢行大字、下一行淡啲）已跟時間軸預留位置；**官方歌詞不會預載於公開網站**
+- 拍子機、BPM（預設 68）、簡單得分
+- **五度圈**係獨立頁：揀大調 → 顯示音階、常用和弦、相對小調；鍵盤亮起相關音符
+- 八度偏移、音量、電腦鍵盤簡易試彈（A/W/S/E/D…）
 
 ## 檔案結構（模組化）
 - `js/audio.js` — Web Audio 發聲同拍子機 click
 - `js/midi.js` — Web MIDI 連接
-- `js/piano.js` — 虛擬鍵盤 UI（`PianoUI` 高亮同 note 訂閱）
-- `js/theory.js` — 音階／和弦理論（含 `chordPcsFromSymbol`）
+- `js/piano.js` — 虛擬鍵盤 UI（`PianoUI` 可 mount 到指定容器；和弦音同旋律音分開高亮）
+- `js/theory.js` — 音階／和弦理論（`chordPcsFromSymbol` 支援 slash chord 同 m6、m7）
 - `js/circleOfFifths.js` — 五度圈 UI 同選調邏輯
-- `js/songs/danche.js` — 《單車》各 Level 和弦進行（G 大調）同歌詞時間軸資料
-- `js/followAlong.js` — 跟彈時間軸、歌詞、拍子機、計分、介面
-- `js/app.js` — Tab 切換同啟動
+- `js/songs/danche.js` — 《單車》各 Level 和弦進行、Level 3 旋律，同歌詞時間軸（無預載官方歌詞）
+- `js/followAlong.js` — BPM 時鐘、暫停／繼續、計分、向上捲嘅譜／音符公路
+- `js/app.js` — 主頁／練習頁／五度圈切換
 
 ## 用法
-1. 開網頁後先撳「開聲」
+1. 開網頁後可先撳「開聲」，或入練習頁再開
 2. 接上 MiniLab 3，撳「連接 MIDI」（建議 Chrome / Edge）
-3. **跟彈**：揀 Level，可將 BPM 調慢，開／關拍子機，撳「播放」。進度條會跟住走；跟住而家嘅和弦，喺鍵盤或 MIDI 彈中和弦音就會加分。
-4. **五度圈**：撳一個大調；再撳「成個 scale」或某個和弦，睇鍵盤亮起
+3. 喺主頁揀《單車》→「開始練習」。預設 Level 3。跟住鎖頂鍵盤下面嗰條「而家」線，彈出高亮嘅旋律音或和弦音就可以得分。練習可以將 BPM 調慢
+4. **五度圈**：由主頁進入；撳一個大調，再撳「成個 scale」或某個和弦，睇鍵盤亮起
 
-《單車》和弦進行只供練習，並非官方譜。官方歌詞不會預載於公開網站。
+《單車》和弦進行同旋律只供練習，並非官方譜。官方歌詞不會預載於公開網站。
 
 ## 之後可加
-其他歌曲、轉調、更精細計分、SoundFont 音色等。
+其他歌曲、第 2 頁（第 31–56 小節）、有權使用嘅歌詞、更精細計分、SoundFont 音色等。

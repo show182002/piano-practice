@@ -6,59 +6,136 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.00300</title>
+  <title>鋼琴練習 · Piano Practice v0.01300</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
-<body>
-  <header class="top">
-    <h1>鋼琴練習 <span class="ver">v0.00300</span></h1>
-    <p class="hint">撳「開聲」之後，可以喺「跟彈」跟住和弦練習，或者去「五度圈」揀調。亦可以撳螢幕琴鍵或接 MIDI keyboard。</p>
-  </header>
+<body data-view="home">
+  <section id="view-home" class="view view-home">
+    <header class="top">
+      <h1>鋼琴練習 <span class="ver">v0.01300</span></h1>
+      <p class="hint">揀一首歌入去練習。鍵盤會鎖喺畫面上面，譜同提示由下面升上去，好似教學 app／音遊咁跟住彈中。亦可以先開五度圈睇調。</p>
+    </header>
 
-  <section class="panel">
-    <div class="row">
-      <button type="button" id="btn-audio" class="btn primary">開聲</button>
-      <button type="button" id="btn-midi" class="btn">連接 MIDI</button>
-      <span id="midi-status" class="status">MIDI：未連接</span>
+    <section class="panel home-connect">
+      <div class="row">
+        <button type="button" class="btn primary btn-audio">開聲</button>
+        <button type="button" class="btn btn-midi">連接 MIDI</button>
+        <span class="midi-status status">MIDI：未連接</span>
+      </div>
+    </section>
+
+    <section class="song-grid">
+      <article class="song-card">
+        <div class="song-card-key">G 大調</div>
+        <h2>單車</h2>
+        <p class="song-card-artist">陳奕迅</p>
+        <p class="song-card-meta">練習用編曲（非官方譜）· 跟 C_Zhukov 簡易鋼琴譜第 1 頁</p>
+        <button type="button" class="btn primary" data-open-practice>開始練習</button>
+      </article>
+    </section>
+
+    <div class="home-tools">
+      <button type="button" class="btn" data-open-cof>五度圈</button>
     </div>
-    <div class="row small">
-      <label>八度偏移
-        <select id="octave-offset">
-          <option value="-1">−1</option>
-          <option value="0" selected>0</option>
-          <option value="1">+1</option>
-        </select>
-      </label>
-      <label>音量
-        <input id="volume" type="range" min="0" max="100" value="70" />
-      </label>
+
+    <footer class="foot">
+      <p>v0.01300：選歌後入練習頁，鍵盤鎖頂，譜／旋律／歌詞槽向上捲。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+    </footer>
+  </section>
+
+  <section id="view-practice" class="view view-practice" hidden>
+    <div class="practice-frozen">
+      <div class="practice-chrome">
+        <button type="button" class="btn" data-open-home>返回曲目</button>
+        <button type="button" class="btn primary btn-audio">開聲</button>
+        <button type="button" class="btn btn-midi">連接 MIDI</button>
+        <span class="midi-status status">MIDI：未連接</span>
+        <button type="button" class="btn primary" id="fa-play">播放</button>
+        <button type="button" class="btn" id="fa-pause">暫停</button>
+        <button type="button" class="btn" id="fa-stop">停止</button>
+        <label class="chrome-label">Level
+          <select id="fa-level"></select>
+        </label>
+        <label class="chrome-label">速度 BPM
+          <input id="fa-bpm" type="range" min="40" max="120" value="68" />
+          <span id="fa-bpm-val">68</span>
+        </label>
+        <label class="chrome-label"><input type="checkbox" id="fa-metro" checked />拍子機</label>
+        <label class="chrome-label">八度
+          <select class="octave-offset">
+            <option value="-1">−1</option>
+            <option value="0" selected>0</option>
+            <option value="1">+1</option>
+          </select>
+        </label>
+        <label class="chrome-label">音量
+          <input class="volume" type="range" min="0" max="100" value="70" />
+        </label>
+        <div class="fa-score-box">
+          <span class="k">分數</span>
+          <span class="v" id="fa-score">0</span>
+        </div>
+      </div>
+
+      <div class="practice-now">
+        <div class="fa-now-main">
+          <div class="fa-now-label">而家彈</div>
+          <div class="fa-now-chord" id="fa-now-chord" aria-live="polite">—</div>
+        </div>
+        <div class="fa-lyrics">
+          <div class="fa-lyric-current empty" id="fa-lyric-current" aria-live="polite"></div>
+          <div class="fa-lyric-next" id="fa-lyric-next"></div>
+          <p class="fa-lyric-note">官方歌詞未有預載喺呢個公開網站。如果你有權使用嘅歌詞，之後可以加進去，會跟時間軸同步。</p>
+        </div>
+        <div class="fa-now-side">
+          <div class="fa-now-meta">
+            <span id="fa-section"></span>
+            <span id="fa-beats"></span>
+            <span id="fa-next"></span>
+            <span class="fa-beat-dots" id="fa-beat-dots"></span>
+          </div>
+          <div class="fa-timeline">
+            <span class="fa-time" id="fa-time-now">0:00</span>
+            <div class="fa-timeline-track" id="fa-timeline-track" role="progressbar" aria-label="播放進度">
+              <div class="fa-timeline-fill" id="fa-timeline-fill"></div>
+              <div class="fa-timeline-playhead" id="fa-timeline-playhead"></div>
+            </div>
+            <span class="fa-time" id="fa-time-total">0:00</span>
+          </div>
+          <p class="fa-level-sub" id="fa-level-sub"></p>
+          <p class="fa-status" id="fa-status"></p>
+        </div>
+      </div>
+
+      <div class="keyboard-wrap frozen" id="keyboard-dock-practice">
+        <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
+      </div>
+      <div class="now-line" id="fa-now-line"><span>而家</span></div>
+    </div>
+
+    <div class="practice-scroller" id="fa-scroller">
+      <div id="fa-highway" class="fa-highway"></div>
     </div>
   </section>
 
-  <div class="tabs-wrap">
-    <div class="tabs" role="tablist" aria-label="練習模式">
-      <button type="button" class="tab on" role="tab" id="tab-follow" aria-controls="panel-follow" aria-selected="true">跟彈</button>
-      <button type="button" class="tab" role="tab" id="tab-cof" aria-controls="panel-cof" aria-selected="false">五度圈</button>
-    </div>
-  </div>
-
-  <section id="panel-follow" class="mode-panel panel" role="tabpanel" aria-labelledby="tab-follow">
-    <div id="follow-along"></div>
+  <section id="view-cof" class="view view-cof" hidden>
+    <header class="top">
+      <button type="button" class="btn" data-open-home>返回曲目</button>
+      <h1>五度圈</h1>
+      <p class="hint">撳外圈大調；內圈細字係相對小調。再撳音階／和弦，鍵盤會亮起對應鍵。</p>
+    </header>
+    <section class="panel">
+      <div class="row">
+        <button type="button" class="btn primary btn-audio">開聲</button>
+        <button type="button" class="btn btn-midi">連接 MIDI</button>
+        <span class="midi-status status">MIDI：未連接</span>
+      </div>
+    </section>
+    <section class="panel cof-section">
+      <div id="circle-of-fifths"></div>
+    </section>
+    <div class="keyboard-wrap cof-keys" id="keyboard-dock-cof"></div>
   </section>
-
-  <section id="panel-cof" class="mode-panel panel cof-section" role="tabpanel" aria-labelledby="tab-cof" hidden>
-    <h2 class="cof-heading">五度圈</h2>
-    <p class="cof-hint">撳外圈大調；內圈細字係相對小調。再撳音階／和弦，鍵盤會亮起對應鍵。</p>
-    <div id="circle-of-fifths"></div>
-  </section>
-
-  <section class="keyboard-wrap">
-    <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
-  </section>
-
-  <footer class="foot">
-    <p>v0.00300：跟彈《單車》（G 大調）＋歌詞／timeline＋五度圈＋虛擬鍵盤／MIDI。和弦進行係練習用編曲，並非官方譜。</p>
-  </footer>
 
   <script src="js/audio.js"></script>
   <script src="js/midi.js"></script>
