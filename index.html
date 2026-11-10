@@ -6,14 +6,14 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01300</title>
+  <title>鋼琴練習 · Piano Practice v0.01400</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01300</span></h1>
-      <p class="hint">揀一首歌入去練習。鍵盤會鎖喺畫面上面，譜同提示由下面升上去，好似教學 app／音遊咁跟住彈中。亦可以先開五度圈睇調。</p>
+      <h1>鋼琴練習 <span class="ver">v0.01400</span></h1>
+      <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），中間同步歌詞，下面係跟 MiniLab 3 嘅鍵盤。亦可以先開五度圈睇調。</p>
     </header>
 
     <section class="panel home-connect">
@@ -39,14 +39,14 @@
     </div>
 
     <footer class="foot">
-      <p>v0.01300：選歌後入練習頁，鍵盤鎖頂，譜／旋律／歌詞槽向上捲。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+      <p>v0.01400：練習頁譜在上、歌詞在鍵盤上面、鍵盤闊度鎖死。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
     </footer>
   </section>
 
   <section id="view-practice" class="view view-practice" hidden>
-    <div class="practice-frozen">
+    <div class="practice-stage">
       <div class="practice-chrome">
-        <button type="button" class="btn" data-open-home>返回曲目</button>
+        <button type="button" class="btn" data-open-home>返回</button>
         <button type="button" class="btn primary btn-audio">開聲</button>
         <button type="button" class="btn btn-midi">連接 MIDI</button>
         <span class="midi-status status">MIDI：未連接</span>
@@ -56,7 +56,7 @@
         <label class="chrome-label">Level
           <select id="fa-level"></select>
         </label>
-        <label class="chrome-label">速度 BPM
+        <label class="chrome-label">BPM
           <input id="fa-bpm" type="range" min="40" max="120" value="68" />
           <span id="fa-bpm-val">68</span>
         </label>
@@ -77,44 +77,43 @@
         </div>
       </div>
 
-      <div class="practice-now">
-        <div class="fa-now-main">
-          <div class="fa-now-label">而家彈</div>
-          <div class="fa-now-chord" id="fa-now-chord" aria-live="polite">—</div>
-        </div>
-        <div class="fa-lyrics">
-          <div class="fa-lyric-current empty" id="fa-lyric-current" aria-live="polite"></div>
-          <div class="fa-lyric-next" id="fa-lyric-next"></div>
-          <p class="fa-lyric-note">官方歌詞未有預載喺呢個公開網站。如果你有權使用嘅歌詞，之後可以加進去，會跟時間軸同步。</p>
-        </div>
-        <div class="fa-now-side">
-          <div class="fa-now-meta">
-            <span id="fa-section"></span>
-            <span id="fa-beats"></span>
-            <span id="fa-next"></span>
-            <span class="fa-beat-dots" id="fa-beat-dots"></span>
+      <div class="fa-transport">
+        <div class="fa-timeline">
+          <span class="fa-time" id="fa-time-now">0:00</span>
+          <div class="fa-timeline-track" id="fa-timeline-track" role="progressbar" aria-label="播放進度">
+            <div class="fa-timeline-fill" id="fa-timeline-fill"></div>
+            <div class="fa-timeline-playhead" id="fa-timeline-playhead"></div>
           </div>
-          <div class="fa-timeline">
-            <span class="fa-time" id="fa-time-now">0:00</span>
-            <div class="fa-timeline-track" id="fa-timeline-track" role="progressbar" aria-label="播放進度">
-              <div class="fa-timeline-fill" id="fa-timeline-fill"></div>
-              <div class="fa-timeline-playhead" id="fa-timeline-playhead"></div>
-            </div>
-            <span class="fa-time" id="fa-time-total">0:00</span>
-          </div>
-          <p class="fa-level-sub" id="fa-level-sub"></p>
-          <p class="fa-status" id="fa-status"></p>
+          <span class="fa-time" id="fa-time-total">0:00</span>
         </div>
+        <p class="fa-status" id="fa-status"></p>
       </div>
 
-      <div class="keyboard-wrap frozen" id="keyboard-dock-practice">
+      <div class="fa-staff-panel">
+        <div class="fa-staff-toolbar">
+          <span class="fa-staff-title" id="fa-staff-title">單車</span>
+          <span class="fa-staff-pos" id="fa-beats"></span>
+          <label class="chrome-label fa-bars-label">顯示
+            <select id="fa-bars">
+              <option value="2">2 節</option>
+              <option value="3">3 節</option>
+              <option value="4" selected>4 節</option>
+              <option value="5">5 節</option>
+              <option value="6">6 節</option>
+            </select>
+          </label>
+        </div>
+        <div id="fa-staff" class="fa-staff" aria-label="大譜表"></div>
+      </div>
+
+      <div class="fa-lyrics" aria-live="polite">
+        <div class="fa-lyric-current empty" id="fa-lyric-current"></div>
+        <div class="fa-lyric-next" id="fa-lyric-next"></div>
+      </div>
+
+      <div class="keyboard-wrap practice-keys" id="keyboard-dock-practice">
         <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
       </div>
-      <div class="now-line" id="fa-now-line"><span>而家</span></div>
-    </div>
-
-    <div class="practice-scroller" id="fa-scroller">
-      <div id="fa-highway" class="fa-highway"></div>
     </div>
   </section>
 

@@ -1,8 +1,16 @@
 (function (global) {
   // MiniLab 3 = 25 keys. Default span: C3 (48) … C5 (72)
+  // Key widths are locked to fixed pixels and never flex/stretch with the viewport.
   const START_MIDI = 48;
   const KEY_COUNT = 25;
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const WHITE_W = 32;
+  const WHITE_GAP = 1;
+  const BLACK_W = 20;
+  const BLACK_H = 76;
+  const KEYBOARD_H = 126;
+  const PAD_X = 8;
+  const PAD_Y = 6;
 
   let keyboard = null;
   const keyEls = new Map();
@@ -24,6 +32,20 @@
     return name + oct;
   }
 
+  function whiteMidis() {
+    const whites = [];
+    for (let i = 0; i < KEY_COUNT; i++) {
+      const midi = START_MIDI + i;
+      if (!isBlack(midi)) whites.push(midi);
+    }
+    return whites;
+  }
+
+  function keyboardWidth() {
+    const n = whiteMidis().length;
+    return PAD_X * 2 + n * WHITE_W + Math.max(0, n - 1) * WHITE_GAP;
+  }
+
   function emitNote(midi, velocity, down) {
     const ev = {
       midi,
@@ -42,56 +64,65 @@
     return function () { noteListeners.delete(fn); };
   }
 
+  function applyFixedFrame() {
+    if (!keyboard) return;
+    const w = keyboardWidth();
+    keyboard.style.width = w + "px";
+    keyboard.style.minWidth = w + "px";
+    keyboard.style.maxWidth = w + "px";
+    keyboard.style.height = KEYBOARD_H + "px";
+    keyboard.style.flex = "0 0 " + w + "px";
+    keyboard.style.flexGrow = "0";
+    keyboard.style.flexShrink = "0";
+  }
+
   function buildKeyboard() {
     if (!keyboard) return;
     keyboard.innerHTML = "";
     keyEls.clear();
+    applyFixedFrame();
 
-    const whites = [];
-    for (let i = 0; i < KEY_COUNT; i++) {
-      const midi = START_MIDI + i;
-      if (!isBlack(midi)) whites.push(midi);
-    }
-
-    whites.forEach((midi) => {
+    const whites = whiteMidis();
+    whites.forEach((midi, idx) => {
       const el = document.createElement("div");
       el.className = "key white";
       el.dataset.midi = String(midi);
+      el.style.flex = "0 0 " + WHITE_W + "px";
+      el.style.width = WHITE_W + "px";
+      el.style.minWidth = WHITE_W + "px";
+      el.style.maxWidth = WHITE_W + "px";
+      el.style.marginRight = (idx === whites.length - 1 ? 0 : WHITE_GAP) + "px";
       el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
       bindPointer(el, midi);
       keyboard.appendChild(el);
       keyEls.set(midi, el);
     });
 
-    requestAnimationFrame(() => {
-      if (!keyboard) return;
-      const rect = keyboard.getBoundingClientRect();
-      const padLeft = 10;
-      const usable = rect.width - 20;
-      const w = usable / whites.length;
-
-      for (let i = 0; i < KEY_COUNT; i++) {
-        const midi = START_MIDI + i;
-        if (!isBlack(midi)) continue;
-        let leftWhiteIndex = -1;
-        for (let wIdx = 0; wIdx < whites.length; wIdx++) {
-          if (whites[wIdx] < midi) leftWhiteIndex = wIdx;
-          else break;
-        }
-        if (leftWhiteIndex < 0) continue;
-
-        const el = document.createElement("div");
-        el.className = "key black";
-        el.dataset.midi = String(midi);
-        el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
-        const left = padLeft + (leftWhiteIndex + 1) * w - 14;
-        el.style.left = `${left}px`;
-        bindPointer(el, midi);
-        keyboard.appendChild(el);
-        keyEls.set(midi, el);
+    for (let i = 0; i < KEY_COUNT; i++) {
+      const midi = START_MIDI + i;
+      if (!isBlack(midi)) continue;
+      let leftWhiteIndex = -1;
+      for (let wIdx = 0; wIdx < whites.length; wIdx++) {
+        if (whites[wIdx] < midi) leftWhiteIndex = wIdx;
+        else break;
       }
-      applyHighlight();
-    });
+      if (leftWhiteIndex < 0) continue;
+      const el = document.createElement("div");
+      el.className = "key black";
+      el.dataset.midi = String(midi);
+      el.style.width = BLACK_W + "px";
+      el.style.minWidth = BLACK_W + "px";
+      el.style.maxWidth = BLACK_W + "px";
+      el.style.height = BLACK_H + "px";
+      // Sit on the boundary between adjacent white keys, independent of container width.
+      const left = PAD_X + (leftWhiteIndex + 1) * (WHITE_W + WHITE_GAP) - WHITE_GAP / 2 - BLACK_W / 2;
+      el.style.left = left + "px";
+      el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
+      bindPointer(el, midi);
+      keyboard.appendChild(el);
+      keyEls.set(midi, el);
+    }
+    applyHighlight();
   }
 
   function bindPointer(el, baseMidi) {
@@ -223,10 +254,6 @@
     else releaseAbsolute(midi);
   });
 
-  window.addEventListener("resize", () => {
-    buildKeyboard();
-  });
-
   const PC_MAP = {
     KeyA: 48, KeyW: 49, KeyS: 50, KeyE: 51, KeyD: 52,
     KeyF: 53, KeyT: 54, KeyG: 55, KeyY: 56, KeyH: 57, KeyU: 58, KeyJ: 59, KeyK: 60
@@ -248,7 +275,6 @@
     if (melodyMidi == null) return null;
     const baseExact = melodyMidi - octaveOffset * 12;
     if (baseExact >= START_MIDI && baseExact < START_MIDI + KEY_COUNT) return baseExact;
-    // Prefer same pitch class on the visible keyboard (nearest octave).
     const pc = ((melodyMidi % 12) + 12) % 12;
     let best = null;
     for (let i = 0; i < KEY_COUNT; i++) {
@@ -280,7 +306,7 @@
   function setHighlights(opts) {
     opts = opts || {};
     if (opts.chordPcs) setHighlightPcs(opts.chordPcs);
-    else if (opts.chordPcs === null || (opts.clearChords)) highlightPcs = new Set();
+    else if (opts.chordPcs === null || opts.clearChords) highlightPcs = new Set();
     if ("melodyMidi" in opts) setMelodyMidi(opts.melodyMidi);
     applyHighlight();
   }
@@ -321,10 +347,10 @@
     onNoteEvent: subscribeNotes,
     getStartMidi: () => START_MIDI,
     getKeyCount: () => KEY_COUNT,
-    getKeyboardEl: () => keyboard
+    getKeyboardEl: () => keyboard,
+    keyMetrics: () => ({ WHITE_W, WHITE_GAP, BLACK_W, KEYBOARD_H, width: keyboardWidth() })
   };
 
-  // Auto-mount if #keyboard is already in the document.
   if (document.getElementById("keyboard")) {
     mount({ keyboard: document.getElementById("keyboard"), root: document });
   }

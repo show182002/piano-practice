@@ -1,4 +1,4 @@
-/* Follow-along practice: BPM clock, karaoke slot, scrolling note highway, scoring. */
+/* Follow-along practice: BPM clock, horizontal grand staff, karaoke slot, scoring. */
 (function (global) {
   const POINTS_HIT = 10;
   const DEDUPE_MS = 280;
@@ -6,16 +6,38 @@
   const SCHEDULE_AHEAD = 0.12;
   const MIN_BPM = 40;
   const MAX_BPM = 120;
-  const PX_PER_BEAT = 88;
-  const NOW_PAD = 28;
-  const STAFF_MIDIS = [64, 67, 71, 74, 77]; // E4 G4 B4 D5 F5 treble lines
+  const MIN_BARS = 2;
+  const MAX_BARS = 6;
+  const DEFAULT_BARS = 4;
+  const NS = "http://www.w3.org/2000/svg";
+  const STEP = 4.5;
+  const SPACE = STEP * 2;
+  const GUTTER = 62;
+  const TOP_PAD = 26;
+  const MID_GAP = 42;
+  const BOTTOM_PAD = 12;
+  const TREBLE_TOP = TOP_PAD;
+  const TREBLE_BOTTOM = TREBLE_TOP + 4 * SPACE;
+  const BASS_TOP = TREBLE_BOTTOM + MID_GAP;
+  const BASS_BOTTOM = BASS_TOP + 4 * SPACE;
+  const SVG_H = BASS_BOTTOM + BOTTOM_PAD;
+  const VOICE_OPTS = { minMidi: 48, maxMidi: 67 };
+  const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
+  const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
+  const TREBLE_SHARP_Y = ["F5", "C5", "G5", "D5", "A4", "E5", "B4"];
+  const TREBLE_FLAT_Y = ["B4", "E5", "A4", "D5", "G4", "C5", "F4"];
+  const BASS_SHARP_Y = ["F3", "C3", "G3", "D3", "A2", "E3", "B2"];
+  const BASS_FLAT_Y = ["B3", "E3", "A2", "D3", "G2", "C3", "F2"];
 
-  let rootEl = null;
-  let highwayEl = null;
+  let staffEl = null;
+  let svg = null;
+  let scrollG = null;
+  let playheadEl = null;
   let song = null;
   let levelId = 3;
   let bpm = 68;
   let metronomeOn = true;
+  let visibleBars = DEFAULT_BARS;
   let state = "stopped";
   let finished = false;
   let score = 0;
@@ -31,13 +53,31 @@
   let unsubscribe = null;
   const lastScoreAt = new Map();
   let scoreFlashTimer = 0;
-  let builtForLevel = null;
+  let builtKey = null;
+  let notationWidth = 0;
+  let pxPerBeat = 48;
+  let resizeObs = null;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+
+  function svgEl(name, attrs, text) {
+    const n = document.createElementNS(NS, name);
+    if (attrs) {
+      Object.keys(attrs).forEach((k) => {
+        if (attrs[k] != null && attrs[k] !== "") n.setAttribute(k, String(attrs[k]));
+      });
+    }
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function $(id) {
+    return document.getElementById(id);
   }
 
   function currentLevel() {
@@ -74,6 +114,31 @@
     return [];
   }
 
+  function barNumber(beat) {
+    const pickup = pickupBeats();
+    const bpb = beatsPerBar();
+    if (beat < pickup) return 0;
+    return Math.floor((beat - pickup) / bpb) + 1;
+  }
+
+  function sungBarSet() {
+    const set = new Set();
+    lyricsList().forEach((line) => {
+      const n = barNumber(line.startBeat);
+      if (n > 0) set.add(n);
+    });
+    return set;
+  }
+
+  /* Lyric-bearing bars show chords. Pickup and later instrumental gaps (no lyric slots) are intro-like. */
+  function isIntroBeat(beat) {
+    const lines = lyricsList();
+    if (!lines.length) return false;
+    const n = barNumber(beat);
+    if (n === 0) return true;
+    return !sungBarSet().has(n);
+  }
+
   function lyricAtBeat(beat) {
     const lines = lyricsList();
     let cur = null;
@@ -85,13 +150,22 @@
         break;
       }
     }
-    return { cur, next };
+    if (isIntroBeat(beat)) {
+      return { cur: null, next: next || (cur && cur.startBeat > beat ? cur : next), intro: true };
+    }
+    return { cur, next, intro: false };
   }
 
   function clampBpm(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return song.defaultBpm || 68;
     return Math.max(MIN_BPM, Math.min(MAX_BPM, Math.round(n)));
+  }
+
+  function clampBars(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return DEFAULT_BARS;
+    return Math.max(MIN_BARS, Math.min(MAX_BARS, Math.round(n)));
   }
 
   function secondsPerBeat() {
@@ -140,139 +214,475 @@
     return cur;
   }
 
+  function pretty(sym) {
+    return global.MusicTheory && MusicTheory.prettyChord ? MusicTheory.prettyChord(sym) : (sym || "—");
+  }
+
+  function prettyNote(name) {
+    return global.MusicTheory && MusicTheory.prettyNote ? MusicTheory.prettyNote(name) : String(name || "");
+  }
+
   function highlightCurrent() {
     if (!global.PianoUI) return;
     const beat = currentBeatFloat();
     const cap = Math.min(Math.floor(beat), Math.max(0, totalBeats() - 1));
     const info = eventAtBeat(cap);
     const mel = melodyAtBeat(beat);
-    const pcs = info && info.ev.chord ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
+    const intro = isIntroBeat(beat);
+    const pcs = (!intro && info && info.ev.chord) ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
     if (PianoUI.setHighlights) {
       PianoUI.setHighlights({
         chordPcs: pcs,
-        melodyMidi: mel ? mel.midi : null
+        melodyMidi: mel ? mel.midi : null,
+        clearChords: intro || !pcs.length
       });
     } else {
       PianoUI.setHighlightPcs(pcs);
     }
   }
 
-  function $(id) {
-    return document.getElementById(id);
+  function keyData() {
+    if (global.MusicTheory && song && song.key) return MusicTheory.keyInfo(song.key);
+    return null;
   }
 
-  function pretty(sym) {
-    return global.MusicTheory && MusicTheory.prettyChord ? MusicTheory.prettyChord(sym) : (sym || "—");
+  function diatonicSteps(name) {
+    return MusicTheory.diatonicIndex(name);
   }
 
-  function midiToYStaff(midi) {
-    // Map midi to a vertical staff position later used as X in the vertical-staff highway.
-    // Treble bottom line E4=64; each diatonic step is one half-space.
-    // Use a simple chromatic-to-pixel map instead, centered on the treble staff.
-    return midi;
+  function yTreble(nameOrSteps) {
+    const steps = typeof nameOrSteps === "number" ? nameOrSteps : diatonicSteps(nameOrSteps);
+    return TREBLE_BOTTOM - (steps - diatonicSteps("E4")) * STEP;
   }
 
-  function staffXFromMidi(midi, width) {
-    const minM = 53; // F3, a bit below G3
-    const maxM = 81; // A5, a bit above G5
-    const t = (midi - minM) / (maxM - minM);
-    const pad = 88;
-    return pad + Math.max(0, Math.min(1, t)) * (width - pad - 28);
+  function yBass(nameOrSteps) {
+    const steps = typeof nameOrSteps === "number" ? nameOrSteps : diatonicSteps(nameOrSteps);
+    return BASS_BOTTOM - (steps - diatonicSteps("G2")) * STEP;
   }
 
-  function buildHighway() {
-    if (!highwayEl) return;
-    highwayEl.innerHTML = "";
-    highwayEl.classList.add("fa-highway");
-    const total = totalBeats();
-    const height = Math.max(total * PX_PER_BEAT + 200, 400);
-    highwayEl.style.height = height + "px";
+  function keyDefaultAccidental(letter) {
+    const kd = keyData();
+    const sig = kd ? kd.key.sig : 0;
+    if (sig > 0) return SHARP_ORDER.slice(0, sig).indexOf(letter) >= 0 ? "#" : "";
+    if (sig < 0) return FLAT_ORDER.slice(0, -sig).indexOf(letter) >= 0 ? "b" : "";
+    return "";
+  }
 
-    const staff = el("div", "fa-staff");
-    staff.style.height = height + "px";
-    // Five treble lines as vertical lines (score rotated: time goes down, pitch across)
-    STAFF_MIDIS.forEach((midi) => {
-      const line = el("div", "fa-staff-line");
-      line.dataset.midi = String(midi);
-      staff.appendChild(line);
+  function neededAccidental(name, beat, barAcc) {
+    const p = MusicTheory.parsePitchName(name);
+    if (!p) return "";
+    const letter = p.name.charAt(0);
+    const acc = MusicTheory.accidentalOf(name);
+    const def = keyDefaultAccidental(letter);
+    const key = barNumber(beat) + ":" + letter + ":" + p.oct;
+    const prev = barAcc.has(key) ? barAcc.get(key) : def;
+    if (acc === prev) return "";
+    barAcc.set(key, acc);
+    if (acc === "") return "n";
+    return acc;
+  }
+
+  function accGlyph(kind) {
+    if (kind === "#") return "♯";
+    if (kind === "b") return "♭";
+    if (kind === "n") return "♮";
+    return "";
+  }
+
+  function staffLinesY(which) {
+    const ys = [];
+    const top = which === "treble" ? TREBLE_TOP : BASS_TOP;
+    for (let i = 0; i < 5; i++) ys.push(top + i * SPACE);
+    return ys;
+  }
+
+  function ledgerLines(y, staffTop, staffBottom) {
+    const lines = [];
+    if (y < staffTop - 0.4) {
+      for (let ly = staffTop - SPACE; ly >= y - 0.2; ly -= SPACE) lines.push(ly);
+    } else if (y > staffBottom + 0.4) {
+      for (let ly = staffBottom + SPACE; ly <= y + 0.2; ly += SPACE) lines.push(ly);
+    }
+    return lines;
+  }
+
+  function xOfBeat(beat) {
+    return beat * pxPerBeat;
+  }
+
+  function viewWidth() {
+    if (!staffEl) return 800;
+    return Math.max(320, staffEl.clientWidth || staffEl.parentElement && staffEl.parentElement.clientWidth || 800);
+  }
+
+  function scrollXFor(beat) {
+    const viewW = Math.max(80, notationWidth);
+    const playheadX = beat * pxPerBeat;
+    const offset = Math.min(pxPerBeat * beatsPerBar(), viewW * 0.22);
+    const totalW = totalBeats() * pxPerBeat + 16;
+    let start = playheadX - offset;
+    const maxStart = Math.max(0, totalW - viewW);
+    return Math.max(0, Math.min(start, maxStart));
+  }
+
+  function drawHead(cx, cy, open) {
+    const head = svgEl("ellipse", {
+      class: "fa-nhead" + (open ? " open" : ""),
+      cx: cx,
+      cy: cy,
+      rx: 5.2,
+      ry: 3.6,
+      transform: "rotate(-20 " + cx + " " + cy + ")"
     });
-    highwayEl.appendChild(staff);
+    return head;
+  }
 
-    const bpb = beatsPerBar();
-    const pickup = pickupBeats();
+  function drawStem(cx, cy, up, length) {
+    const len = length || SPACE * 3.2;
+    const x = up ? cx + 4.6 : cx - 4.6;
+    const y2 = up ? cy - len : cy + len;
+    return svgEl("line", { class: "fa-stem", x1: x, y1: cy, x2: x, y2: y2 });
+  }
 
-    // Beat / bar grid
-    for (let i = 0; i <= total; i++) {
-      const y = i * PX_PER_BEAT;
-      const isBar = i === 0 || (i >= pickup && (i - pickup) % bpb === 0);
-      const row = el("div", "fa-grid-line" + (isBar ? " bar" : " beat"));
-      row.style.top = y + "px";
-      if (isBar) {
-        const barNum = i <= pickup ? (i === 0 ? "Pickup" : "") : String(Math.floor((i - pickup) / bpb) + 1);
-        if (barNum) {
-          const lab = el("span", "fa-bar-num", barNum === "Pickup" ? "起拍" : barNum);
-          row.appendChild(lab);
-        }
-      }
-      highwayEl.appendChild(row);
+  function drawFlags(cx, cy, up, count) {
+    const g = svgEl("g", { class: "fa-flags" });
+    const x = up ? cx + 4.6 : cx - 4.6;
+    const dir = up ? -1 : 1;
+    const stemEnd = cy + dir * SPACE * 3.2;
+    for (let i = 0; i < count; i++) {
+      const y = stemEnd - dir * i * 5;
+      const d = up
+        ? "M " + x + " " + y + " c 8 2 11 9 7 16"
+        : "M " + x + " " + y + " c 8 -2 11 -9 7 -16";
+      g.appendChild(svgEl("path", { class: "fa-flag", d: d }));
+    }
+    return g;
+  }
+
+  function drawDot(cx, cy) {
+    return svgEl("circle", { class: "fa-dot-note", cx: cx + 8.5, cy: cy - 1, r: 1.4 });
+  }
+
+  function isDotted(dur) {
+    const d = Math.round(dur * 8) / 8;
+    return d === 0.75 || d === 1.5 || d === 3;
+  }
+
+  function durStyle(dur) {
+    if (dur >= 3.5) return { open: true, stem: false, flags: 0 };
+    if (dur >= 2) return { open: true, stem: true, flags: 0 };
+    if (dur >= 1) return { open: false, stem: true, flags: 0 };
+    if (dur >= 0.5) return { open: false, stem: true, flags: 1 };
+    return { open: false, stem: true, flags: 2 };
+  }
+
+  function addLedgers(parent, cx, ys) {
+    ys.forEach((y) => {
+      parent.appendChild(svgEl("line", {
+        class: "fa-ledger",
+        x1: cx - 8,
+        y1: y,
+        x2: cx + 8,
+        y2: y
+      }));
+    });
+  }
+
+  function stemUpFor(y, staffMid) {
+    return y > staffMid;
+  }
+
+  function buildStaff() {
+    if (!staffEl) return;
+    const width = viewWidth();
+    notationWidth = Math.max(120, width - GUTTER - 8);
+    pxPerBeat = notationWidth / (visibleBars * beatsPerBar());
+    staffEl.innerHTML = "";
+
+    svg = svgEl("svg", {
+      class: "fa-staff-svg",
+      viewBox: "0 0 " + width + " " + SVG_H,
+      width: "100%",
+      height: String(SVG_H),
+      preserveAspectRatio: "xMinYMid meet",
+      "aria-hidden": "false"
+    });
+
+    const defs = svgEl("defs");
+    defs.appendChild(svgEl("clipPath", { id: "fa-clip-notation" }, null));
+    defs.firstChild.appendChild(svgEl("rect", {
+      x: String(GUTTER),
+      y: "0",
+      width: String(Math.max(1, width - GUTTER)),
+      height: String(SVG_H)
+    }));
+    svg.appendChild(defs);
+
+    // Fixed staff lines across the visible area
+    const linesG = svgEl("g", { class: "fa-staff-lines" });
+    staffLinesY("treble").concat(staffLinesY("bass")).forEach((y) => {
+      linesG.appendChild(svgEl("line", {
+        class: "fa-sline",
+        x1: GUTTER - 6,
+        y1: y,
+        x2: width - 4,
+        y2: y
+      }));
+    });
+    svg.appendChild(linesG);
+
+    const clipped = svgEl("g", { class: "fa-clipped", "clip-path": "url(#fa-clip-notation)" });
+    scrollG = svgEl("g", { class: "fa-scroll" });
+    clipped.appendChild(scrollG);
+    svg.appendChild(clipped);
+
+    drawNotation();
+    drawGutter(width);
+    playheadEl = svgEl("line", {
+      class: "fa-playhead",
+      x1: GUTTER,
+      y1: TREBLE_TOP - 16,
+      x2: GUTTER,
+      y2: BASS_BOTTOM + 4
+    });
+    svg.appendChild(playheadEl);
+
+    staffEl.appendChild(svg);
+    builtKey = levelId + ":" + visibleBars + ":" + Math.round(width);
+    updateStaff();
+  }
+
+  function drawGutter(width) {
+    const bg = svgEl("rect", {
+      class: "fa-gutter-bg",
+      x: 0,
+      y: 0,
+      width: GUTTER,
+      height: SVG_H
+    });
+    svg.appendChild(bg);
+
+    const brace = svgEl("path", {
+      class: "fa-brace",
+      d: bracePath(10, TREBLE_TOP, BASS_BOTTOM)
+    });
+    svg.appendChild(brace);
+
+    svg.appendChild(trebleClef(28, yTreble("G4")));
+    svg.appendChild(bassClef(28, yBass("F3")));
+
+    const kd = keyData();
+    const sig = kd ? kd.key.sig : 0;
+    let cursor = 42;
+    const count = Math.abs(sig);
+    for (let i = 0; i < count; i++) {
+      const nameT = sig > 0 ? TREBLE_SHARP_Y[i] : TREBLE_FLAT_Y[i];
+      const nameB = sig > 0 ? BASS_SHARP_Y[i] : BASS_FLAT_Y[i];
+      const glyph = sig > 0 ? "♯" : "♭";
+      svg.appendChild(svgEl("text", {
+        class: "fa-keysig",
+        x: cursor,
+        y: yTreble(nameT) + 3.5
+      }, glyph));
+      svg.appendChild(svgEl("text", {
+        class: "fa-keysig",
+        x: cursor,
+        y: yBass(nameB) + 3.5
+      }, glyph));
+      cursor += 7;
     }
 
-    // Section labels + chord signs
+    const tsX = Math.max(cursor + 2, 50);
+    const tMid = (TREBLE_TOP + TREBLE_BOTTOM) / 2;
+    const bMid = (BASS_TOP + BASS_BOTTOM) / 2;
+    const ts = String(beatsPerBar());
+    svg.appendChild(svgEl("text", { class: "fa-timesig", x: tsX, y: tMid - 3 }, ts));
+    svg.appendChild(svgEl("text", { class: "fa-timesig", x: tsX, y: tMid + SPACE - 3 }, ts));
+    svg.appendChild(svgEl("text", { class: "fa-timesig", x: tsX, y: bMid - 3 }, ts));
+    svg.appendChild(svgEl("text", { class: "fa-timesig", x: tsX, y: bMid + SPACE - 3 }, ts));
+  }
+
+  function bracePath(x, y1, y2) {
+    const mid = (y1 + y2) / 2;
+    return "M " + (x + 4) + " " + y1 +
+      " C " + (x - 6) + " " + (y1 + 10) + ", " + (x - 6) + " " + (mid - 14) + ", " + (x + 1) + " " + mid +
+      " C " + (x - 6) + " " + (mid + 14) + ", " + (x - 6) + " " + (y2 - 10) + ", " + (x + 4) + " " + y2 +
+      " C " + (x - 2) + " " + (y2 - 12) + ", " + (x - 2) + " " + (mid + 16) + ", " + (x + 5) + " " + mid +
+      " C " + (x - 2) + " " + (mid - 16) + ", " + (x - 2) + " " + (y1 + 12) + ", " + (x + 4) + " " + y1;
+  }
+
+  function trebleClef(x, gLineY) {
+    const g = svgEl("g", { class: "fa-clef fa-treble", transform: "translate(" + x + " " + gLineY + ")" });
+    g.appendChild(svgEl("path", {
+      class: "fa-clef-path",
+      d: "M 1.5 -2 C 1.5 -10 10 -13 10 -5 C 10 6 -3 7 -3 -2 C -3 -12 12 -10 12 2 C 12 14 2 22 2 30 C 2 36 8 37 8 31 C 8 27 4 27 4 31 C 4 34 7 34 7 31 M 1.5 -2 C 1.5 4 7 5 7 -2 C 7 -7 3 -7 3 -2"
+    }));
+    return g;
+  }
+
+  function bassClef(x, fLineY) {
+    const g = svgEl("g", { class: "fa-clef fa-bass", transform: "translate(" + x + " " + fLineY + ")" });
+    g.appendChild(svgEl("path", {
+      class: "fa-clef-path",
+      d: "M -6 2 C -6 -10 10 -12 10 -2 C 10 8 -1 12 -1 20 L -6 20 C -6 12 4 10 4 -1 C 4 -7 -2 -7 -2 2 Z"
+    }));
+    g.appendChild(svgEl("circle", { class: "fa-clef-dot", cx: 14, cy: -4.5, r: 1.5 }));
+    g.appendChild(svgEl("circle", { class: "fa-clef-dot", cx: 14, cy: 4.5, r: 1.5 }));
+    return g;
+  }
+
+  function drawNotation() {
+    if (!scrollG) return;
+    scrollG.innerHTML = "";
+    const bpb = beatsPerBar();
+    const pickup = pickupBeats();
+    const total = totalBeats();
+    const barAcc = new Map();
+
+    // Beat ticks + barlines + numbers
+    for (let i = 0; i <= total; i++) {
+      const x = xOfBeat(i);
+      const isBar = i === 0 || (i >= pickup && (i - pickup) % bpb === 0);
+      if (isBar) {
+        scrollG.appendChild(svgEl("line", {
+          class: "fa-barline",
+          x1: x,
+          y1: TREBLE_TOP,
+          x2: x,
+          y2: BASS_BOTTOM
+        }));
+        const barNum = i <= pickup ? (i === 0 ? "起拍" : "") : String(Math.floor((i - pickup) / bpb) + 1);
+        if (barNum) {
+          scrollG.appendChild(svgEl("text", {
+            class: "fa-bar-num",
+            x: x + 3,
+            y: TREBLE_TOP - 15
+          }, barNum));
+        }
+      } else {
+        scrollG.appendChild(svgEl("line", {
+          class: "fa-beatline",
+          x1: x,
+          y1: TREBLE_TOP,
+          x2: x,
+          y2: BASS_BOTTOM
+        }));
+      }
+    }
+    // Final double bar
+    const endX = xOfBeat(total);
+    scrollG.appendChild(svgEl("line", {
+      class: "fa-barline thick",
+      x1: endX + 3,
+      y1: TREBLE_TOP,
+      x2: endX + 3,
+      y2: BASS_BOTTOM
+    }));
+
     const prog = progression();
     let t = 0;
     let lastSection = null;
     prog.forEach((ev) => {
       if (ev.section && ev.section !== lastSection) {
         lastSection = ev.section;
-        const sec = el("div", "fa-section-flag", ev.section);
-        sec.style.top = t * PX_PER_BEAT + "px";
-        highwayEl.appendChild(sec);
+        scrollG.appendChild(svgEl("text", {
+          class: "fa-section-flag",
+          x: xOfBeat(t) + 3,
+          y: TREBLE_TOP - 4
+        }, ev.section));
       }
-      if (ev.chord) {
-        const ch = el("div", "fa-chord-flag", pretty(ev.chord));
-        ch.style.top = t * PX_PER_BEAT + "px";
-        ch.style.height = Math.max(ev.beats * PX_PER_BEAT - 4, 22) + "px";
-        ch.dataset.start = String(t);
-        ch.dataset.end = String(t + ev.beats);
-        highwayEl.appendChild(ch);
+      const intro = isIntroBeat(t + 0.001);
+      if (ev.chord && !intro) {
+        const sym = svgEl("text", {
+          class: "fa-chord-sym",
+          x: xOfBeat(t) + 16,
+          y: TREBLE_TOP - 15,
+          "data-start": String(t),
+          "data-end": String(t + ev.beats)
+        }, pretty(ev.chord));
+        scrollG.appendChild(sym);
+
+        const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS);
+        if (voicing.length) {
+          const g = svgEl("g", {
+            class: "fa-cnotes",
+            "data-start": String(t),
+            "data-end": String(t + ev.beats)
+          });
+          const cx = xOfBeat(t) + Math.min(10, pxPerBeat * 0.22);
+          const style = durStyle(ev.beats);
+          const midY = (BASS_TOP + BASS_BOTTOM) / 2;
+          const placed = voicing.map((v) => ({ v, y: yBass(v.name) }));
+          placed.forEach((p) => {
+            addLedgers(g, cx, ledgerLines(p.y, BASS_TOP, BASS_BOTTOM));
+            const acc = neededAccidental(p.v.name, t, barAcc);
+            if (acc) {
+              g.appendChild(svgEl("text", {
+                class: "fa-acc",
+                x: cx - 14,
+                y: p.y + 3.2
+              }, accGlyph(acc)));
+            }
+            g.appendChild(drawHead(cx, p.y, style.open));
+          });
+          if (style.stem && placed.length) {
+            const ys = placed.map((p) => p.y);
+            const up = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 > midY;
+            const y1 = up ? Math.max.apply(null, ys) : Math.min.apply(null, ys);
+            const extreme = up ? Math.min.apply(null, ys) : Math.max.apply(null, ys);
+            const len = Math.abs(extreme - y1) + SPACE * 2.4;
+            g.appendChild(drawStem(cx, y1, up, len));
+          }
+          scrollG.appendChild(g);
+        }
       }
       t += ev.beats;
     });
 
-    // Melody notes
+    // Melody always on the treble staff (ledger lines for low notes).
+    const melAcc = new Map();
     melodyNotes().forEach((n) => {
-      const note = el("div", "fa-note");
-      note.style.top = n.start * PX_PER_BEAT + "px";
-      note.style.height = Math.max(n.dur * PX_PER_BEAT - 2, 14) + "px";
-      note.dataset.midi = String(n.midi);
-      note.dataset.start = String(n.start);
-      note.dataset.end = String(n.start + n.dur);
-      const head = el("div", "fa-note-head" + (n.dur >= 2 ? " open" : ""));
-      const name = el("span", "fa-note-name", n.name.replace("#", "♯").replace("b", "♭"));
-      head.appendChild(name);
-      note.appendChild(head);
-      if (n.dur >= 0.5) {
-        const body = el("div", "fa-note-body");
-        note.appendChild(body);
+      const g = svgEl("g", {
+        class: "fa-mnote",
+        "data-start": String(n.start),
+        "data-end": String(n.start + n.dur),
+        "data-midi": String(n.midi)
+      });
+      const cx = xOfBeat(n.start) + Math.min(9, pxPerBeat * 0.2);
+      const cy = yTreble(n.name);
+      const style = durStyle(n.dur);
+      const midY = (TREBLE_TOP + TREBLE_BOTTOM) / 2;
+      addLedgers(g, cx, ledgerLines(cy, TREBLE_TOP, TREBLE_BOTTOM));
+      const acc = neededAccidental(n.name, n.start, melAcc);
+      if (acc) {
+        g.appendChild(svgEl("text", { class: "fa-acc", x: cx - 14, y: cy + 3.2 }, accGlyph(acc)));
       }
-      highwayEl.appendChild(note);
+      g.appendChild(drawHead(cx, cy, style.open));
+      const up = stemUpFor(cy, midY);
+      if (style.stem) g.appendChild(drawStem(cx, cy, up));
+      if (style.flags) g.appendChild(drawFlags(cx, cy, up, style.flags));
+      if (isDotted(n.dur)) g.appendChild(drawDot(cx, cy));
+      scrollG.appendChild(g);
     });
-
-    positionPitchColumns();
-    builtForLevel = levelId;
   }
 
-  function positionPitchColumns() {
-    if (!highwayEl) return;
-    const width = highwayEl.clientWidth || highwayEl.parentElement && highwayEl.parentElement.clientWidth || 800;
-    highwayEl.querySelectorAll(".fa-staff-line").forEach((line) => {
-      const midi = Number(line.dataset.midi);
-      line.style.left = staffXFromMidi(midi, width) + "px";
-    });
-    highwayEl.querySelectorAll(".fa-note").forEach((note) => {
-      const midi = Number(note.dataset.midi);
-      const x = staffXFromMidi(midi, width);
-      note.style.left = x + "px";
+  function updateStaff() {
+    if (!svg || !scrollG || !playheadEl) return;
+    const beat = currentBeatFloat();
+    const sx = scrollXFor(beat);
+    scrollG.setAttribute("transform", "translate(" + (GUTTER - sx) + " 0)");
+    const x = GUTTER + beat * pxPerBeat - sx;
+    playheadEl.setAttribute("x1", String(x));
+    playheadEl.setAttribute("x2", String(x));
+
+    const hitLo = beat - 0.12;
+    const hitHi = beat + 0.18;
+    staffEl.querySelectorAll(".fa-mnote, .fa-cnotes, .fa-chord-sym").forEach((node) => {
+      const s = Number(node.dataset.start);
+      const e = Number(node.dataset.end);
+      node.classList.toggle("current", s <= beat && beat < e);
+      node.classList.toggle("hit-window", s <= hitHi && s >= hitLo);
+      node.classList.toggle("passed", e <= beat);
     });
   }
 
@@ -283,6 +693,7 @@
     const level = $("fa-level");
     const bpmEl = $("fa-bpm");
     const metro = $("fa-metro");
+    const bars = $("fa-bars");
     if (play) play.addEventListener("click", playSong);
     if (pause) pause.addEventListener("click", pauseSong);
     if (stop) stop.addEventListener("click", () => stopSong({}));
@@ -307,10 +718,36 @@
       metro.checked = metronomeOn;
       metro.addEventListener("change", (e) => { metronomeOn = !!e.target.checked; });
     }
-    window.addEventListener("resize", () => {
-      positionPitchColumns();
-      updateHighway();
-    });
+    if (bars) {
+      bars.value = String(visibleBars);
+      bars.addEventListener("change", (e) => setVisibleBars(Number(e.target.value)));
+    }
+    window.addEventListener("resize", onResize);
+    if (typeof ResizeObserver === "function" && staffEl) {
+      resizeObs = new ResizeObserver(() => onResize());
+      resizeObs.observe(staffEl);
+    }
+  }
+
+  function onResize() {
+    if (!staffEl || !active && !staffEl.clientWidth) {
+      updateStaff();
+      return;
+    }
+    const width = viewWidth();
+    const key = levelId + ":" + visibleBars + ":" + Math.round(width);
+    if (key !== builtKey) buildStaff();
+    else updateStaff();
+  }
+
+  function setVisibleBars(n) {
+    const next = clampBars(n);
+    if (next === visibleBars) return;
+    visibleBars = next;
+    const bars = $("fa-bars");
+    if (bars) bars.value = String(visibleBars);
+    buildStaff();
+    render();
   }
 
   function updateTimeline() {
@@ -342,50 +779,39 @@
       if (!lines.length) {
         lyricCur.textContent = "";
         lyricCur.classList.add("empty");
-        lyricNext.textContent = "呢個 Level 暫時未有歌詞時間軸";
+        lyricCur.classList.remove("intro");
+        lyricNext.textContent = "";
       } else {
         const found = lyricAtBeat(beat);
-        const curText = found.cur && found.cur.text ? found.cur.text : "";
-        const nextText = found.next && found.next.text ? found.next.text : "";
-        if (curText) {
-          lyricCur.classList.remove("empty");
-          lyricCur.textContent = curText;
+        if (found.intro) {
+          const info = eventAtBeat(beat);
+          const label = (info && info.ev.section) ? info.ev.section : "前奏";
+          lyricCur.classList.add("empty", "intro");
+          lyricCur.textContent = label;
+          const nextText = found.next && found.next.text ? found.next.text : (found.next ? "……" : "");
+          lyricNext.textContent = nextText;
         } else {
-          lyricCur.classList.add("empty");
-          lyricCur.textContent = found.cur ? "……" : "";
+          const curText = found.cur && found.cur.text ? found.cur.text : "";
+          const nextText = found.next && found.next.text ? found.next.text : "";
+          if (curText) {
+            lyricCur.classList.remove("empty", "intro");
+            lyricCur.textContent = curText;
+          } else {
+            lyricCur.classList.add("empty");
+            lyricCur.classList.remove("intro");
+            lyricCur.textContent = found.cur ? "……" : "";
+          }
+          lyricNext.textContent = nextText || (found.next ? "……" : "");
         }
-        lyricNext.textContent = nextText || (found.next ? "……" : "");
       }
     }
-  }
-
-  function updateHighway() {
-    if (!highwayEl) return;
-    const beat = currentBeatFloat();
-    const y = NOW_PAD - beat * PX_PER_BEAT;
-    highwayEl.style.transform = "translateY(" + y + "px)";
-    const hitLo = beat - 0.12;
-    const hitHi = beat + 0.18;
-    highwayEl.querySelectorAll(".fa-note").forEach((note) => {
-      const s = Number(note.dataset.start);
-      const e = Number(note.dataset.end);
-      note.classList.toggle("current", s <= beat && beat < e);
-      note.classList.toggle("hit-window", s <= hitHi && s >= hitLo);
-      note.classList.toggle("passed", e <= beat);
-    });
-    highwayEl.querySelectorAll(".fa-chord-flag").forEach((ch) => {
-      const s = Number(ch.dataset.start);
-      const e = Number(ch.dataset.end);
-      ch.classList.toggle("current", s <= beat && beat < e);
-      ch.classList.toggle("passed", e <= beat);
-    });
   }
 
   function startClock() {
     stopClock();
     const tick = () => {
       updateTimeline();
-      updateHighway();
+      updateStaff();
       highlightCurrent();
       if (state === "playing") rafId = requestAnimationFrame(tick);
     };
@@ -403,65 +829,36 @@
     const total = totalBeats();
     const cap = Math.min(Math.floor(currentBeatFloat()), Math.max(0, total - 1));
     const info = eventAtBeat(cap);
-    const prog = progression();
     const bpb = beatsPerBar();
     const pickup = pickupBeats();
-
-    const chordEl = $("fa-now-chord");
-    const sectionEl = $("fa-section");
-    const beatsEl = $("fa-beats");
-    const nextEl = $("fa-next");
-    const statusEl = $("fa-status");
     const scoreEl = $("fa-score");
-    const levelSub = $("fa-level-sub");
+    const statusEl = $("fa-status");
     const bpmVal = $("fa-bpm-val");
+    const titleEl = $("fa-staff-title");
+    const beatsEl = $("fa-beats");
 
     if (scoreEl) scoreEl.textContent = String(score);
-    if (levelSub) levelSub.textContent = currentLevel().subtitle || "";
+    if (titleEl) {
+      const lv = currentLevel();
+      titleEl.textContent = (song.title || "") + (lv ? " · " + lv.name : "");
+    }
 
     const beat = currentBeatFloat();
     const mel = melodyAtBeat(beat);
-
-    if (info && chordEl) {
-      chordEl.textContent = info.ev.chord ? pretty(info.ev.chord) : "—";
-      chordEl.classList.toggle("finished", finished);
-      const abs = cap;
-      const afterPickup = Math.max(0, abs - pickup);
-      const bar = abs < pickup ? "起拍" : ("第 " + (Math.floor(afterPickup / bpb) + 1) + " 小節");
-      if (sectionEl) sectionEl.textContent = info.ev.section || bar;
-      if (beatsEl) {
-        const beatInBar = abs < pickup ? (abs + 1) : ((afterPickup % bpb) + 1);
-        beatsEl.textContent = (abs < pickup ? "起拍" : ("拍 " + beatInBar + " / " + bpb)) +
-          (mel ? (" · " + mel.name.replace("#", "♯").replace("b", "♭")) : "");
-      }
-      const next = prog[info.index + 1];
-      if (nextEl) {
-        const nextChord = next && next.chord ? pretty(next.chord) : "";
-        nextEl.textContent = nextChord ? ("下一粒：" + nextChord) : (finished ? "已完" : "");
-      }
-    } else if (chordEl) {
-      chordEl.textContent = "—";
-      if (sectionEl) sectionEl.textContent = "";
-      if (beatsEl) beatsEl.textContent = "";
-      if (nextEl) nextEl.textContent = "";
-    }
-
-    const dots = $("fa-beat-dots");
-    if (dots) {
-      dots.innerHTML = "";
-      const afterPickup = Math.max(0, cap - pickup);
-      const pos = cap < pickup ? 0 : (afterPickup % bpb);
-      for (let i = 0; i < bpb; i++) {
-        const d = el("span", "fa-dot");
-        if (i === 0) d.classList.add("accent");
-        if (pos === i && cap >= pickup) d.classList.add("on");
-        dots.appendChild(d);
-      }
+    const abs = cap;
+    const afterPickup = Math.max(0, abs - pickup);
+    const bar = abs < pickup ? "起拍" : ("第 " + (Math.floor(afterPickup / bpb) + 1) + " 小節");
+    const beatInBar = abs < pickup ? (abs + 1) : ((afterPickup % bpb) + 1);
+    const section = info && info.ev.section ? info.ev.section : "";
+    const noteBit = mel ? (" · " + prettyNote(mel.name)) : "";
+    if (beatsEl) {
+      const beatBit = abs < pickup ? "" : (" · 拍 " + beatInBar + "/" + bpb);
+      beatsEl.textContent = [section, bar].filter(Boolean).join(" · ") + beatBit + noteBit;
     }
 
     if (statusEl) {
       if (finished) statusEl.textContent = "完成！分數：" + score + "。再撳「播放」可以由頭再練習。";
-      else if (state === "playing") statusEl.textContent = "進行中…跟住而家線彈出高亮嘅音。";
+      else if (state === "playing") statusEl.textContent = "";
       else if (state === "paused") statusEl.textContent = "已暫停";
       else statusEl.textContent = "";
     }
@@ -477,8 +874,10 @@
     if (levelEl) levelEl.value = String(levelId);
     const metro = $("fa-metro");
     if (metro) metro.checked = metronomeOn;
+    const bars = $("fa-bars");
+    if (bars) bars.value = String(visibleBars);
     updateTimeline();
-    updateHighway();
+    updateStaff();
   }
 
   function fireBeat(index) {
@@ -597,7 +996,7 @@
     if (!lv) return;
     levelId = lv.id;
     stopSong({});
-    buildHighway();
+    buildStaff();
     highlightCurrent();
     render();
   }
@@ -627,7 +1026,7 @@
       nextBeatTime = anchorAudioTime + (nextIdx - pos) * secondsPerBeat();
       schedulerTick(myRun);
       updateTimeline();
-      updateHighway();
+      updateStaff();
       return;
     }
     bpm = next;
@@ -641,7 +1040,8 @@
     const beat = currentBeatFloat();
     const info = eventAtBeat(Math.floor(beat));
     const mel = melodyAtBeat(beat);
-    const pcs = info && info.ev.chord ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
+    const intro = isIntroBeat(beat);
+    const pcs = (!intro && info && info.ev.chord) ? MusicTheory.chordPcsFromSymbol(info.ev.chord) : [];
     const isMelody = mel && ev.pc === (((mel.midi % 12) + 12) % 12);
     const isChord = pcs.indexOf(ev.pc) >= 0;
     if (!isMelody && !isChord) return;
@@ -662,8 +1062,9 @@
 
   function activate() {
     active = true;
-    if (builtForLevel !== levelId) buildHighway();
-    positionPitchColumns();
+    const width = viewWidth();
+    const key = levelId + ":" + visibleBars + ":" + Math.round(width);
+    if (builtKey !== key) buildStaff();
     highlightCurrent();
     render();
   }
@@ -681,18 +1082,18 @@
   }
 
   function mount(container, songData) {
-    rootEl = container;
-    highwayEl = container;
+    staffEl = container;
     song = songData;
     levelId = defaultLevelId(song);
     bpm = clampBpm(song.defaultBpm || 68);
     metronomeOn = true;
+    visibleBars = DEFAULT_BARS;
     state = "stopped";
     finished = false;
     score = 0;
     beatIndex = 0;
     bind();
-    buildHighway();
+    buildStaff();
     render();
     if (!unsubscribe && global.PianoUI && typeof PianoUI.subscribeNotes === "function") {
       unsubscribe = PianoUI.subscribeNotes(onNote);
@@ -705,6 +1106,7 @@
     deactivate,
     play: playSong,
     pause: pauseSong,
-    stop: () => stopSong({})
+    stop: () => stopSong({}),
+    setVisibleBars
   };
 })(window);
