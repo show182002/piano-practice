@@ -61,6 +61,7 @@
   let pastedLyricsRaw = "";
   let pastedChars = [];
   const LYRICS_STORAGE_PREFIX = "piano-practice-lyrics-";
+  const METRONOME_STORAGE = "piano-practice-metronome";
   const PASTE_FOLD_MQ = "(orientation: landscape) and (max-width: 950px), (max-height: 500px) and (orientation: landscape)";
 
   function el(tag, cls, text) {
@@ -259,10 +260,55 @@
     const row = $("fa-lyric-paste-row");
     const more = $("fa-more-panel");
     const panel = staffEl && staffEl.parentElement;
-    if (!row || !more || !panel) return;
+    if (row && more && panel) {
+      const fold = window.matchMedia(PASTE_FOLD_MQ).matches;
+      const home = fold ? more : panel;
+      if (row.parentElement !== home) home.appendChild(row);
+    }
+    placeMetronome();
+  }
+
+  function loadSavedMetronome() {
+    try {
+      const raw = localStorage.getItem(METRONOME_STORAGE);
+      if (raw == null || raw === "") return true;
+      if (raw === "0" || raw === "false" || raw === "off") return false;
+      return raw === "1" || raw === "true" || raw === "on";
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function persistMetronome() {
+    try { localStorage.setItem(METRONOME_STORAGE, metronomeOn ? "1" : "0"); }
+    catch (_) { /* private mode */ }
+  }
+
+  function cancelMetronomeClicks() {
+    if (global.PianoAudio && typeof PianoAudio.cancelClicks === "function") {
+      PianoAudio.cancelClicks();
+    }
+  }
+
+  function setMetronomeOn(on) {
+    metronomeOn = !!on;
+    persistMetronome();
+    if (!metronomeOn) cancelMetronomeClicks();
+    const metro = $("fa-metro");
+    if (metro && !metro.matches(":active")) metro.checked = metronomeOn;
+  }
+
+  function placeMetronome() {
+    const wrap = $("fa-metro-wrap");
+    const more = $("fa-more-panel");
+    const moreBtn = $("fa-more");
+    if (!wrap || !more || !moreBtn) return;
     const fold = window.matchMedia(PASTE_FOLD_MQ).matches;
-    const home = fold ? more : panel;
-    if (row.parentElement !== home) home.appendChild(row);
+    if (fold) {
+      if (wrap.parentElement !== more) more.insertBefore(wrap, more.firstChild);
+    } else if (wrap.parentElement !== moreBtn.parentElement || wrap.nextElementSibling !== moreBtn) {
+      moreBtn.parentElement.insertBefore(wrap, moreBtn);
+    }
   }
 
   function applyPastedLyrics(raw, persist) {
@@ -1096,9 +1142,12 @@
       bpmEl.value = String(bpm);
       bpmEl.addEventListener("input", (e) => setBpm(Number(e.target.value), { fromSlider: true }));
     }
-    if (metro) {
+    if (metro && !metro.dataset.bound) {
+      metro.dataset.bound = "1";
       metro.checked = metronomeOn;
-      metro.addEventListener("change", (e) => { metronomeOn = !!e.target.checked; });
+      metro.addEventListener("change", (e) => { setMetronomeOn(!!e.target.checked); });
+    } else if (metro) {
+      metro.checked = metronomeOn;
     }
     if (bars) {
       bars.value = String(visibleBars);
@@ -1309,7 +1358,7 @@
     const levelEl = $("fa-level");
     if (levelEl) levelEl.value = String(levelId);
     const metro = $("fa-metro");
-    if (metro) metro.checked = metronomeOn;
+    if (metro && !metro.matches(":active")) metro.checked = metronomeOn;
     const bars = $("fa-bars");
     if (bars) bars.value = String(visibleBars);
     updateLyricPasteUi();
@@ -1402,6 +1451,7 @@
     clearTimer();
     stopClock();
     cancelGuideAudio();
+    cancelMetronomeClicks();
     state = "paused";
     beatIndex = pos;
     render();
@@ -1413,6 +1463,7 @@
     clearTimer();
     stopClock();
     cancelGuideAudio();
+    cancelMetronomeClicks();
     state = "stopped";
     if (opts.finished) {
       finished = true;
@@ -1496,7 +1547,7 @@
     song = songData;
     levelId = defaultLevelId(song);
     bpm = clampBpm(song.defaultBpm || 68);
-    metronomeOn = true;
+    metronomeOn = loadSavedMetronome();
     visibleBars = DEFAULT_BARS;
     state = "stopped";
     finished = false;

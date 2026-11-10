@@ -1,6 +1,6 @@
 # 鋼琴練習 · Piano Practice
 
-簡單網上鋼琴練習（`v0.01700`）。
+簡單網上鋼琴練習（`v0.01701`）。
 
 線上：https://piano-practice-ksoc.netlify.app/
 
@@ -12,12 +12,12 @@
 - 播放可以開「示範」跟播（旋律同和弦可分開靜音）；自己彈嘅鍵同 MIDI 仍然會出聲
 - 兩條 track 可以分開決定鍵盤上見唔見到按鍵色。和弦高亮用該組 voicing 嘅實際 MIDI，唔會因為同一個音名而連上／下一組八度一齊亮
 - 螢幕虛擬鋼琴、Web MIDI（接 USB keyboard 可同步亮鍵 + 出聲）
-- **Salamander Grand Piano** 取樣音色（全 88 鍵、A0–C8、1 層力度；未錄到嘅音由最接近樣本移調）。示範同現場彈奏／MIDI 都用呢套音色；載入失敗會退回電子波，唔會無聲。力度會跟住開聲大小，輕重係大聲細聲（1 層唔會改音色明暗）
+- **Salamander Grand Piano** 取樣音色（全 88 鍵、A0–C8、1 層力度；未錄到嘅音由最接近樣本移調）。示範同現場彈奏／MIDI 都用呢套音色；載入失敗會退回電子波，唔會無聲。力度會跟住開聲大小，輕重係大聲細聲（1 層唔會改音色明暗）。取樣已做響度補償（約 7 倍 voice peak），主路徑有安全限制器，避免大聲和弦爆音；音量掣仍然 0–100
 - 「殘響」可由乾調到濕（預設係中等、類似一般 piano demo 站嘅大廳感，明顯乾過樣本原裝 12 秒尾音），設定會記低
 - **跟彈《單車》**（陳奕迅；練習用編曲，G 大調）。預設 **Level 3**：跟 C_Zhukov 簡易鋼琴譜第 1 頁（pickup＋第 1–30 小節）寫上單音旋律同小節中間嘅 slash chord。第 2 頁（第 31–56 小節）未有收入
 - 冇歌詞嘅段落當 Intro／間奏（第 1 頁：pickup＋第 1–4 小節，同第 22–24 小節），唔顯示和弦。歌詞開始之後先顯示旋律＋和弦
 - Level 3 譜下面每個旋律音預設顯示音名（例如 A4、F#4）；前奏同間奏只顯示段落名稱，唔放音名。可用「填詞」盒貼上自己寫嘅整段詞，撳「套用」就一個字對一個音取代音名（空白同標點會跳過；字數唔夠就保留音名，多出嚟嘅字會忽略）。詞只存於瀏覽器 `localStorage`（`piano-practice-lyrics-danche`），可用「還原音名」清除。**官方歌詞不會預載於公開網站**
-- 拍子機、BPM（預設 68）
+- 拍子機、BPM（預設 68）。拍子機掣喺「示範」旁邊（窄橫向可收喺「更多」）；預設開，關掉會記低（`piano-practice-metronome`），唔會每次入練習頁又自動開返
 - 手機請打橫使用；直向會提示轉橫，橫向模式會簡化控制（次要選項同「殘響」收喺「更多」）
 - **五度圈**係獨立頁：揀大調 → 顯示音階、常用和弦、相對小調；鍵盤亮起相關音符
 - 八度偏移、音量、電腦鍵盤簡易試彈（A/W/S/E/D…）
@@ -26,7 +26,7 @@
 鋼琴音色來自 [Salamander Grand Piano V3](https://archive.org/details/SalamanderGrandPianoV3)，由 **Alexander Holm** 錄製，授權為 [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/)（CC BY 3.0）。網站用嘅係 1 層力度、每隔小三度錄製嘅 OGG 子集（A0 至 C8）。包裝呢個子集嘅 npm 套件 `@audio-samples/piano-velocity1` 本身係 MIT（Jan Forst），但樣本本身仍然要標示 Alexander Holm 同 CC BY 3.0。
 
 ## 檔案結構（模組化）
-- `js/audio.js` — Salamander 取樣發聲（全 88 鍵）、殘響乾／濕、拍子機 click，以及跟播示範音（同現場彈奏分開 voice；載入失敗退回電子波）
+- `js/audio.js` — Salamander 取樣發聲（全 88 鍵，含響度補償同主路徑限制器）、殘響乾／濕、拍子機 click（可即時取消）、以及跟播示範音（同現場彈奏分開 voice；載入失敗退回電子波）
 - `audio/salamander/` — 30 個 OGG 樣本（CC BY 3.0, Alexander Holm）
 - `js/midi.js` — Web MIDI 連接
 - `js/piano.js` — 虛擬鍵盤 UI（固定鍵寬、可按比例縮放至填滿畫面；`PianoUI` 可 mount 到指定容器；和弦用精確 MIDI 高亮，旋律金、和弦藍）

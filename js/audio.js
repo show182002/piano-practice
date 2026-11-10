@@ -12,12 +12,22 @@
 
   let ctx = null;
   let master = null;
+  let limiter = null;
   let voiceBus = null;
   let dryGain = null;
   let wetGain = null;
   const live = new Map();
   const guide = new Map();
+  const clicks = new Set();
   let guideSeq = 0;
+
+  /* Salamander OGGs peak about -16 to -41 dBFS (C4 ~ -19 dB / 0.11 linear).
+     The old 0.55 voice peak left a typical mid note at vel 100 / vol 100 around -26 dBFS.
+     7x makeup (0.55 * 7 = 3.85) puts C4 at vel 127 / vol 100 around -7.5 dBFS.
+     A master limiter then catches loud lows and 3–4 note chords. */
+  const SAMPLE_PEAK_GAIN = 0.55 * 7;
+  const OSC_PEAK_GAIN = 0.45;
+  const OSC_SUS_GAIN = 0.28;
 
   const buffers = new Map();
   let loadState = "idle"; // idle | loading | ready | error
@@ -113,7 +123,15 @@
   function setupGraph() {
     master = ctx.createGain();
     master.gain.value = 0.7;
-    master.connect(ctx.destination);
+
+    limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 3;
+    limiter.ratio.value = 16;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.2;
+    master.connect(limiter);
+    limiter.connect(ctx.destination);
 
     voiceBus = ctx.createGain();
     voiceBus.gain.value = 1;
@@ -262,8 +280,8 @@
 
     const v = Math.max(0.05, Math.min(1, (velocity == null ? 90 : velocity) / 127));
     const g = gainScale == null ? 1 : gainScale;
-    const peak = Math.max(0.0002, 0.28 * v * g);
-    const sus = Math.max(0.0002, 0.18 * v * g);
+    const peak = Math.max(0.0002, OSC_PEAK_GAIN * v * g);
+    const sus = Math.max(0.0002, OSC_SUS_GAIN * v * g);
 
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(peak, t + 0.015);
@@ -294,7 +312,7 @@
     const gain = ctx.createGain();
     const v = Math.max(0.05, Math.min(1, (velocity == null ? 90 : velocity) / 127));
     const g = gainScale == null ? 1 : gainScale;
-    const peak = Math.max(0.0002, 0.55 * v * g);
+    const peak = Math.max(0.0002, SAMPLE_PEAK_GAIN * v * g);
     const env = envelopeTimes();
 
     gain.gain.setValueAtTime(0.0001, t);
@@ -418,6 +436,24 @@
     gain.connect(master);
     osc.start(t);
     osc.stop(t + 0.08);
+    const rec = { osc: osc, gain: gain };
+    clicks.add(rec);
+    osc.onended = function () { clicks.delete(rec); };
+  }
+
+  function cancelClicks() {
+    const t = ctx ? ctx.currentTime : 0;
+    for (const rec of clicks) {
+      try {
+        rec.gain.gain.cancelScheduledValues(t);
+        let g = 0.0001;
+        try { g = Math.max(0.0001, rec.gain.gain.value); } catch (_) {}
+        rec.gain.gain.setValueAtTime(g, t);
+        rec.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.01);
+        rec.osc.stop(t + 0.02);
+      } catch (_) { /* already stopped */ }
+    }
+    clicks.clear();
   }
 
   // Kick off sample fetch/decode as soon as the page loads (context may stay suspended).
@@ -433,6 +469,7 @@
     setReverb,
     getReverb,
     click,
+    cancelClicks,
     scheduleGuide,
     cancelGuide,
     loadSamples: startSampleLoad,

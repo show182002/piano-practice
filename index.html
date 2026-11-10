@@ -6,13 +6,13 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01700</title>
+  <title>鋼琴練習 · Piano Practice v0.01701</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01700</span></h1>
+      <h1>鋼琴練習 <span class="ver">v0.01701</span></h1>
       <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
@@ -40,7 +40,7 @@
     </div>
 
     <footer class="foot">
-      <p>v0.01700：Level 3 譜下面每個旋律音會顯示音名；作完詞可以喺「填詞」盒貼上，撳「套用」就一個字對一個音取代音名（只留喺你瀏覽器）。示範同彈奏用 Salamander 鋼琴音色（全 88 鍵、1 層力度），「殘響」可由乾調到濕。鍵盤可放大至填滿畫面闊度，譜號已換成正規高音／低音譜號。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+      <p>v0.01701：鋼琴取樣已提高音量（音量掣仍然 0–100，開到最大會再大聲啲），主路徑加咗安全限制器以免和弦爆音。拍子機掣已放到「示範」旁邊，關掉會記住，唔會一入練習頁又自動開返。Level 3 譜下面每個旋律音會顯示音名；作完詞可以喺「填詞」盒貼上，撳「套用」就一個字對一個音取代音名（只留喺你瀏覽器）。示範同彈奏用 Salamander 鋼琴音色（全 88 鍵、1 層力度），「殘響」可由乾調到濕。鍵盤可放大至填滿畫面闊度，譜號已換成正規高音／低音譜號。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -78,6 +78,7 @@
         </div>
 
         <label class="chrome-label"><input type="checkbox" id="fa-guide" checked />示範</label>
+        <label class="chrome-label" id="fa-metro-wrap"><input type="checkbox" id="fa-metro" checked />拍子機</label>
         <button type="button" class="btn btn-more" id="fa-more" aria-expanded="false" aria-controls="fa-more-panel">更多</button>
         <span class="sample-status status" data-sample-status></span>
       </div>
@@ -93,7 +94,6 @@
           <input id="fa-bpm" type="range" min="40" max="120" value="68" />
           <span id="fa-bpm-val">68</span>
         </label>
-        <label class="chrome-label"><input type="checkbox" id="fa-metro" checked />拍子機</label>
         <label class="chrome-label">鍵盤大小
           <input id="fa-key-scale" type="range" min="70" max="280" value="100" />
           <span id="fa-key-scale-val">100%</span>
