@@ -991,6 +991,57 @@
     render();
   }
 
+  function seekBySeconds(deltaSec) {
+    const total = totalBeats();
+    const next = currentBeatFloat() + deltaSec / secondsPerBeat();
+    const wasPlaying = state === "playing";
+    if (wasPlaying) {
+      runId += 1;
+      clearTimer();
+      stopClock();
+      cancelGuideAudio();
+      cancelMetronomeClicks();
+      state = "paused";
+    }
+    seekTo(next);
+    if (wasPlaying && beatIndex < total) playSong();
+  }
+
+  function togglePlayPause() {
+    if (!song) return;
+    if (state === "playing") pauseSong();
+    else playSong();
+  }
+
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = (el.tagName || "").toUpperCase();
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el.isContentEditable;
+  }
+
+  function onPracticeKeydown(e) {
+    if (!active) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isTypingTarget(e.target)) return;
+    if (e.code === "Space" || e.key === " " || e.key === "Spacebar") {
+      if (e.repeat) return;
+      e.preventDefault();
+      togglePlayPause();
+      return;
+    }
+    if (e.defaultPrevented) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      seekBySeconds(e.key === "ArrowLeft" ? -5 : 5);
+    }
+  }
+
+  function bindPracticeKeys() {
+    if (bindPracticeKeys._bound) return;
+    bindPracticeKeys._bound = true;
+    window.addEventListener("keydown", onPracticeKeydown);
+  }
+
   function beginScrub(e, track) {
     e.preventDefault();
     resumeAfterScrub = state === "playing";
@@ -1156,6 +1207,7 @@
     bindGuideControls();
     bindMoreButton();
     bindTimeline();
+    bindPracticeKeys();
     bindLyricPaste();
     syncHighlightToggles();
     window.addEventListener("resize", onResize);
