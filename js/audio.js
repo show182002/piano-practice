@@ -45,7 +45,8 @@
   }
 
   function sampleFile(midi) {
-    const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+    // Use "s" for sharps (Ds, Fs). Netlify rejects "#" in deployed filenames.
+    const name = NOTE_NAMES[((midi % 12) + 12) % 12].replace("#", "s");
     const oct = Math.floor(midi / 12) - 1;
     return name + oct + "v1.ogg";
   }
