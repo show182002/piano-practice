@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.00001</title>
+  <title>鋼琴練習 · Piano Practice v0.00100</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <header class="top">
-    <h1>鋼琴練習 <span class="ver">v0.00001</span></h1>
-    <p class="hint">撳螢幕琴鍵，或接上 MIDI keyboard（例如 Arturia MiniLab 3）</p>
+    <h1>鋼琴練習 <span class="ver">v0.00100</span></h1>
+    <p class="hint">撳螢幕琴鍵，或接上 MIDI keyboard（例如 Arturia MiniLab 3）。撳五度圈揀調，鍵盤會亮起相關音符。</p>
   </header>
 
   <section class="panel">
@@ -36,12 +36,23 @@
     <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
   </section>
 
+  <section class="cof-section panel">
+    <h2 class="cof-heading">五度圈</h2>
+    <p class="cof-hint">撳外圈大調；內圈細字係相對小調。再撳音階／和弦，鍵盤會亮起對應鍵。</p>
+    <div id="circle-of-fifths"></div>
+  </section>
+
   <footer class="foot">
-    <p>第一版：虛擬鍵盤 + Web Audio + Web MIDI。之後可加和弦提示、轉調、五度圈。</p>
+    <p>v0.00100：虛擬鍵盤 + Web Audio + Web MIDI + 五度圈（模組化）。之後可加轉調、練習模式。</p>
   </footer>
 
   <script src="js/audio.js"></script>
   <script src="js/midi.js"></script>
+  <script src="js/theory.js"></script>
   <script src="js/piano.js"></script>
+  <script src="js/circleOfFifths.js"></script>
+  <script>
+    CircleOfFifths.mount(document.getElementById("circle-of-fifths"));
+  </script>
 </body>
 </html>

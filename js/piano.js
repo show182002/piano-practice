@@ -14,6 +14,7 @@
   const keyEls = new Map();
   let octaveOffset = 0;
   const held = new Set(); // sounding midi numbers (after offset)
+  let highlightPcs = new Set(); // pitch classes 0-11 from Circle of Fifths / theory
 
   function isBlack(midi) {
     const n = midi % 12;
@@ -39,7 +40,7 @@
     // White keys first (flex row)
     whites.forEach((midi) => {
       const el = document.createElement("div");
-      el.className = "key white";
+      el.className = "key white" + (highlightPcs.has(midi % 12) ? " in-scale" : "");
       el.dataset.midi = String(midi);
       el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
       bindPointer(el, midi);
@@ -69,7 +70,7 @@
         if (leftWhiteIndex < 0) continue;
 
         const el = document.createElement("div");
-        el.className = "key black";
+        el.className = "key black" + (highlightPcs.has(midi % 12) ? " in-scale" : "");
         el.dataset.midi = String(midi);
         el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
         const left = padLeft + (leftWhiteIndex + 1) * w - 14;
@@ -201,6 +202,29 @@
     if (m == null) return;
     release(m);
   });
+
+  function applyHighlight() {
+    for (const [midi, el] of keyEls) {
+      el.classList.toggle("in-scale", highlightPcs.has(midi % 12));
+    }
+  }
+
+  function setHighlightPcs(pcs) {
+    highlightPcs = new Set((pcs || []).map((n) => ((n % 12) + 12) % 12));
+    applyHighlight();
+  }
+
+  function clearHighlight() {
+    highlightPcs = new Set();
+    applyHighlight();
+  }
+
+  window.PianoUI = {
+    setHighlightPcs,
+    clearHighlight,
+    getStartMidi: () => START_MIDI,
+    getKeyCount: () => KEY_COUNT
+  };
 
   buildKeyboard();
 })();
