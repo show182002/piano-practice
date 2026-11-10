@@ -1,4 +1,4 @@
-/* Follow-along practice: BPM timeline, chord chart, metronome, simple scoring. */
+/* Follow-along practice: BPM timeline, lyrics, chord chart, metronome, simple scoring. */
 (function (global) {
   const POINTS_HIT = 10;
   const DEDUPE_MS = 280;
@@ -19,8 +19,11 @@
   let beatIndex = 0;
   let runId = 0;
   let timerId = null;
+  let rafId = null;
   let nextBeatTime = 0;
   let scheduledBeatIndex = 0;
+  let anchorAudioTime = 0;
+  let anchorBeat = 0;
   let unsubscribe = null;
   const lastScoreAt = new Map();
   let scoreFlashTimer = 0;
@@ -48,6 +51,27 @@
     return progression().reduce((s, ev) => s + ev.beats, 0);
   }
 
+  function lyricsList() {
+    const lv = currentLevel();
+    if (lv.lyrics && lv.lyrics.length) return lv.lyrics;
+    if (song.lyrics && song.lyrics.length) return song.lyrics;
+    return [];
+  }
+
+  function lyricAtBeat(beat) {
+    const lines = lyricsList();
+    let cur = null;
+    let next = null;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startBeat <= beat) cur = lines[i];
+      else {
+        next = lines[i];
+        break;
+      }
+    }
+    return { cur, next };
+  }
+
   function clampBpm(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return song.defaultBpm || 76;
@@ -58,13 +82,31 @@
     return 60 / bpm;
   }
 
+  function currentBeatFloat() {
+    const total = totalBeats();
+    if (state === "playing") {
+      const b = anchorBeat + (PianoAudio.now() - anchorAudioTime) / secondsPerBeat();
+      return Math.max(0, Math.min(total, b));
+    }
+    if (finished) return total;
+    return Math.max(0, Math.min(total, beatIndex));
+  }
+
+  function formatTime(sec) {
+    const t = Math.max(0, sec);
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
   function eventAtBeat(beat) {
     let t = 0;
     const prog = progression();
+    const cap = Math.max(0, Math.min(beat, Math.max(0, totalBeats() - 0.0001)));
     for (let i = 0; i < prog.length; i++) {
       const ev = prog[i];
-      if (beat < t + ev.beats) {
-        return { ev, index: i, beatInEvent: beat - t, startBeat: t };
+      if (cap < t + ev.beats) {
+        return { ev, index: i, beatInEvent: cap - t, startBeat: t };
       }
       t += ev.beats;
     }
@@ -73,7 +115,7 @@
 
   function highlightCurrent() {
     if (!global.PianoUI) return;
-    const cap = Math.min(beatIndex, Math.max(0, totalBeats() - 1));
+    const cap = Math.min(Math.floor(currentBeatFloat()), Math.max(0, totalBeats() - 1));
     const info = eventAtBeat(cap);
     if (!info) {
       PianoUI.clearHighlight();
@@ -128,6 +170,36 @@
     meta.appendChild(dots);
     nowBox.appendChild(meta);
     rootEl.appendChild(nowBox);
+
+    const lyricBox = el("div", "fa-lyrics");
+    const lyricCur = el("div", "fa-lyric-current", "");
+    lyricCur.id = "fa-lyric-current";
+    lyricCur.setAttribute("aria-live", "polite");
+    const lyricNext = el("div", "fa-lyric-next", "");
+    lyricNext.id = "fa-lyric-next";
+    lyricBox.appendChild(lyricCur);
+    lyricBox.appendChild(lyricNext);
+    rootEl.appendChild(lyricBox);
+
+    const tl = el("div", "fa-timeline");
+    const timeNow = el("span", "fa-time", "0:00");
+    timeNow.id = "fa-time-now";
+    const track = el("div", "fa-timeline-track");
+    track.id = "fa-timeline-track";
+    track.setAttribute("role", "progressbar");
+    track.setAttribute("aria-label", "播放進度");
+    const fill = el("div", "fa-timeline-fill");
+    fill.id = "fa-timeline-fill";
+    const head = el("div", "fa-timeline-playhead");
+    head.id = "fa-timeline-playhead";
+    track.appendChild(fill);
+    track.appendChild(head);
+    const timeTotal = el("span", "fa-time", "0:00");
+    timeTotal.id = "fa-time-total";
+    tl.appendChild(timeNow);
+    tl.appendChild(track);
+    tl.appendChild(timeTotal);
+    rootEl.appendChild(tl);
 
     const controls = el("div", "fa-controls");
     const btnPlay = el("button", "btn primary", "播放");
@@ -249,10 +321,65 @@
     });
   }
 
+  function updateTimeline() {
+    if (!rootEl) return;
+    const total = totalBeats();
+    const beat = currentBeatFloat();
+    const spb = secondsPerBeat();
+    const elapsed = beat * spb;
+    const dur = total * spb;
+    const pct = total ? (beat / total) * 100 : 0;
+    const fill = $("fa-timeline-fill");
+    const head = $("fa-timeline-playhead");
+    const track = $("fa-timeline-track");
+    const timeNow = $("fa-time-now");
+    const timeTotal = $("fa-time-total");
+    if (fill) fill.style.width = pct + "%";
+    if (head) head.style.left = pct + "%";
+    if (track) {
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", String(Math.round(dur)));
+      track.setAttribute("aria-valuenow", String(Math.round(elapsed)));
+    }
+    if (timeNow) timeNow.textContent = formatTime(elapsed);
+    if (timeTotal) timeTotal.textContent = formatTime(dur);
+
+    const lyricCur = $("fa-lyric-current");
+    const lyricNext = $("fa-lyric-next");
+    const lines = lyricsList();
+    if (!lyricCur || !lyricNext) return;
+    if (!lines.length) {
+      lyricCur.textContent = "";
+      lyricCur.classList.add("empty");
+      lyricNext.textContent = "呢個 Level 暫時未有歌詞";
+      return;
+    }
+    lyricCur.classList.remove("empty");
+    const found = lyricAtBeat(beat);
+    lyricCur.textContent = found.cur && found.cur.text ? found.cur.text : "";
+    lyricNext.textContent = found.next && found.next.text ? found.next.text : "";
+  }
+
+  function startClock() {
+    stopClock();
+    const tick = () => {
+      updateTimeline();
+      if (state === "playing") rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stopClock() {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
   function render() {
     if (!rootEl) return;
     const total = totalBeats();
-    const cap = Math.min(beatIndex, Math.max(0, total - 1));
+    const cap = Math.min(Math.floor(currentBeatFloat()), Math.max(0, total - 1));
     const info = eventAtBeat(cap);
     const prog = progression();
     const bpb = beatsPerBar();
@@ -287,8 +414,7 @@
     for (let i = 0; i < bpb; i++) {
       const d = el("span", "fa-dot");
       if (i === 0) d.classList.add("accent");
-      if (state === "playing" && info && (cap % bpb) === i) d.classList.add("on");
-      else if (state !== "playing" && (cap % bpb) === i) d.classList.add("on");
+      if ((cap % bpb) === i) d.classList.add("on");
       dots.appendChild(d);
     }
 
@@ -311,6 +437,7 @@
     if (!$("fa-bpm").matches(":active")) $("fa-bpm").value = String(bpm);
     $("fa-level").value = String(levelId);
     $("fa-metro").checked = metronomeOn;
+    updateTimeline();
   }
 
   function fireBeat(index) {
@@ -374,29 +501,44 @@
     runId += 1;
     const myRun = runId;
     clearTimer();
-    nextBeatTime = PianoAudio.now() + 0.06;
-    scheduledBeatIndex = beatIndex;
+    const startDelay = 0.06;
+    anchorBeat = beatIndex;
+    anchorAudioTime = PianoAudio.now() + startDelay;
+    const frac = beatIndex - Math.floor(beatIndex);
+    if (frac < 1e-6) {
+      scheduledBeatIndex = Math.round(beatIndex);
+      nextBeatTime = anchorAudioTime;
+    } else {
+      scheduledBeatIndex = Math.ceil(beatIndex);
+      nextBeatTime = anchorAudioTime + (scheduledBeatIndex - beatIndex) * secondsPerBeat();
+    }
     highlightCurrent();
     render();
+    startClock();
     schedulerTick(myRun);
   }
 
   function pause() {
     if (state !== "playing") return;
+    const pos = currentBeatFloat();
     runId += 1;
     clearTimer();
+    stopClock();
     state = "paused";
+    beatIndex = pos;
     render();
+    updateTimeline();
   }
 
   function stop(opts) {
     opts = opts || {};
     runId += 1;
     clearTimer();
+    stopClock();
     state = "stopped";
     if (opts.finished) {
       finished = true;
-      beatIndex = Math.max(0, totalBeats() - 1);
+      beatIndex = Math.max(0, totalBeats());
     } else {
       finished = false;
       beatIndex = 0;
@@ -407,6 +549,7 @@
     }
     if (active) highlightCurrent();
     render();
+    updateTimeline();
   }
 
   function setLevel(id) {
@@ -426,21 +569,30 @@
       else $("fa-bpm-val").textContent = String(bpm);
       return;
     }
-    bpm = next;
-    $("fa-bpm-val").textContent = String(bpm);
     if (state === "playing") {
+      const pos = currentBeatFloat();
+      bpm = next;
+      $("fa-bpm-val").textContent = String(bpm);
       runId += 1;
       const myRun = runId;
       clearTimer();
-      scheduledBeatIndex = beatIndex + 1;
-      nextBeatTime = PianoAudio.now() + secondsPerBeat();
+      anchorBeat = pos;
+      anchorAudioTime = PianoAudio.now();
+      const nextIdx = Math.ceil(pos + 0.0001);
+      scheduledBeatIndex = nextIdx;
+      nextBeatTime = anchorAudioTime + (nextIdx - pos) * secondsPerBeat();
       schedulerTick(myRun);
+      updateTimeline();
+      return;
     }
+    bpm = next;
+    $("fa-bpm-val").textContent = String(bpm);
+    updateTimeline();
   }
 
   function onNote(ev) {
     if (!active || !ev.down || state !== "playing") return;
-    const info = eventAtBeat(beatIndex);
+    const info = eventAtBeat(Math.floor(currentBeatFloat()));
     if (!info) return;
     const pcs = MusicTheory.chordPcsFromSymbol(info.ev.chord);
     if (pcs.indexOf(ev.pc) < 0) return;

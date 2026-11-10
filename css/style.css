@@ -362,6 +362,73 @@ html, body {
 }
 .fa-hint { margin: 0; color: var(--muted); font-size: 0.85rem; }
 
+
+.fa-lyrics {
+  background: #141824;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-height: 4.4em;
+  display: grid;
+  gap: 6px;
+  align-content: center;
+}
+.fa-lyric-current {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
+.fa-lyric-current.empty { display: none; }
+.fa-lyric-next {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
+.fa-timeline {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.fa-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  min-width: 2.6em;
+}
+.fa-timeline-track {
+  position: relative;
+  height: 10px;
+  background: #2a3144;
+  border: 1px solid #3a4258;
+  border-radius: 999px;
+  overflow: visible;
+}
+.fa-timeline-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.fa-timeline-playhead {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 14px;
+  height: 14px;
+  background: #ffe08a;
+  border: 2px solid #141824;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ffe08a 40%, transparent);
+  pointer-events: none;
+}
+
 @media (max-width: 600px) {
   .fa-now-chord { font-size: 1.8rem; }
   .fa-bars { grid-template-columns: repeat(2, 1fr); }
