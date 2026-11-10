@@ -13,7 +13,7 @@
   const GUTTER = 74;
   const TOP_PAD = 26;
   const MID_GAP = 42;
-  const BOTTOM_PAD = 26;
+  const BOTTOM_PAD = 30;
   const LYRIC_Y_OFFSET = 16;
   const TREBLE_TOP = TOP_PAD;
   const TREBLE_BOTTOM = TREBLE_TOP + 4 * SPACE;
@@ -58,6 +58,10 @@
   let scrubbing = false;
   let resumeAfterScrub = false;
   let moreOpen = false;
+  let pastedLyricsRaw = "";
+  let pastedChars = [];
+  const LYRICS_STORAGE_PREFIX = "piano-practice-lyrics-";
+  const PASTE_FOLD_MQ = "(orientation: landscape) and (max-width: 950px), (max-height: 500px) and (orientation: landscape)";
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -155,6 +159,122 @@
       return { cur: null, next: next || (cur && cur.startBeat > beat ? cur : next), intro: true };
     }
     return { cur, next, intro: false };
+  }
+
+  function hasSungMelody() {
+    return melodyNotes().length > 0 && lyricsList().length > 0;
+  }
+
+  function lyricsStorageKey() {
+    return LYRICS_STORAGE_PREFIX + (song && song.id ? song.id : "danche");
+  }
+
+  function isSkippedLyricChar(ch) {
+    return /^[\p{White_Space}\p{P}]$/u.test(ch);
+  }
+
+  function extractLyricChars(raw) {
+    const chars = [];
+    const s = raw == null ? "" : String(raw);
+    for (const ch of s) {
+      if (!isSkippedLyricChar(ch)) chars.push(ch);
+    }
+    return chars;
+  }
+
+  function sungNotesWithLabels() {
+    const out = [];
+    let i = 0;
+    melodyNotes().forEach((n) => {
+      if (isIntroBeat(n.start + 0.001)) return;
+      const pasted = i < pastedChars.length ? pastedChars[i] : null;
+      out.push({
+        note: n,
+        index: i,
+        label: pasted || n.name,
+        pasted: !!pasted
+      });
+      i++;
+    });
+    return out;
+  }
+
+  function labelsInRange(start, end) {
+    return sungNotesWithLabels().filter((x) => x.note.start >= start && x.note.start < end);
+  }
+
+  function joinPhraseLabels(items) {
+    let s = "";
+    items.forEach((x) => {
+      const isPitch = /^[A-G][#b]?\d$/.test(x.label);
+      if (isPitch) s += (s && !s.endsWith(" ") ? " " : "") + x.label;
+      else s += x.label;
+    });
+    return s.trim();
+  }
+
+  function loadSavedLyrics() {
+    pastedLyricsRaw = "";
+    pastedChars = [];
+    try {
+      const saved = localStorage.getItem(lyricsStorageKey());
+      if (saved) {
+        pastedLyricsRaw = saved;
+        pastedChars = extractLyricChars(saved);
+      }
+    } catch (err) {}
+    const ta = $("fa-lyric-paste");
+    if (ta) ta.value = pastedLyricsRaw;
+  }
+
+  function savePastedLyrics(raw) {
+    try {
+      if (raw) localStorage.setItem(lyricsStorageKey(), raw);
+      else localStorage.removeItem(lyricsStorageKey());
+    } catch (err) {}
+  }
+
+  function updateLyricPasteUi() {
+    const row = $("fa-lyric-paste-row");
+    const countEl = $("fa-lyric-count");
+    const applyBtn = $("fa-lyric-apply");
+    const resetBtn = $("fa-lyric-reset");
+    const ta = $("fa-lyric-paste");
+    const show = !!(song && hasSungMelody());
+    if (row) row.hidden = !show;
+    if (applyBtn) applyBtn.disabled = !show;
+    if (resetBtn) resetBtn.disabled = !show;
+    if (ta) ta.disabled = !show;
+    if (countEl) {
+      const total = sungNotesWithLabels().length;
+      const used = Math.min(pastedChars.length, total);
+      const extra = Math.max(0, pastedChars.length - total);
+      let text = "已套用 " + used + " / " + total;
+      if (extra) text += "（多 " + extra + " 字）";
+      countEl.textContent = text;
+    }
+  }
+
+  function placeLyricPasteRow() {
+    const row = $("fa-lyric-paste-row");
+    const more = $("fa-more-panel");
+    const panel = staffEl && staffEl.parentElement;
+    if (!row || !more || !panel) return;
+    const fold = window.matchMedia(PASTE_FOLD_MQ).matches;
+    const home = fold ? more : panel;
+    if (row.parentElement !== home) home.appendChild(row);
+  }
+
+  function applyPastedLyrics(raw, persist) {
+    pastedLyricsRaw = raw == null ? "" : String(raw);
+    pastedChars = extractLyricChars(pastedLyricsRaw);
+    if (persist) savePastedLyrics(pastedLyricsRaw);
+    if (scrollG) {
+      drawLyricsUnderStaff();
+      updateStaff();
+    }
+    updateLyricPasteUi();
+    updateTimeline();
   }
 
   function clampBpm(v) {
@@ -680,9 +800,10 @@
   }
 
   function drawLyricsUnderStaff() {
+    if (!scrollG) return;
+    scrollG.querySelectorAll(".fa-under-lyric").forEach((node) => node.remove());
     const y = BASS_BOTTOM + LYRIC_Y_OFFSET;
     const total = totalBeats();
-    const lines = lyricsList();
     let i = 0;
     while (i < total) {
       if (isIntroBeat(i + 0.001)) {
@@ -701,18 +822,17 @@
         i++;
       }
     }
-    lines.forEach((line, idx) => {
-      if (isIntroBeat(line.startBeat + 0.001)) return;
-      const start = line.startBeat;
-      const end = (idx + 1 < lines.length) ? lines[idx + 1].startBeat : total;
-      const text = line.text ? line.text : "……";
+    sungNotesWithLabels().forEach((item) => {
+      const n = item.note;
+      const cx = xOfBeat(n.start) + Math.min(9, pxPerBeat * 0.2);
       scrollG.appendChild(svgEl("text", {
-        class: "fa-under-lyric" + (line.text ? "" : " empty"),
-        x: xOfBeat(start) + 3,
+        class: "fa-under-lyric" + (item.pasted ? " lyric-ch" : " pitch"),
+        x: cx,
         y: y,
-        "data-start": String(start),
-        "data-end": String(end)
-      }, text));
+        "text-anchor": "middle",
+        "data-start": String(n.start),
+        "data-end": String(n.start + n.dur)
+      }, item.label));
     });
   }
 
@@ -987,6 +1107,7 @@
     bindGuideControls();
     bindMoreButton();
     bindTimeline();
+    bindLyricPaste();
     syncHighlightToggles();
     window.addEventListener("resize", onResize);
     if (typeof ResizeObserver === "function" && staffEl) {
@@ -995,7 +1116,36 @@
     }
   }
 
+  function bindLyricPaste() {
+    const applyBtn = $("fa-lyric-apply");
+    const resetBtn = $("fa-lyric-reset");
+    if (applyBtn && !applyBtn.dataset.bound) {
+      applyBtn.dataset.bound = "1";
+      applyBtn.addEventListener("click", () => {
+        const ta = $("fa-lyric-paste");
+        applyPastedLyrics(ta ? ta.value : "", true);
+      });
+    }
+    if (resetBtn && !resetBtn.dataset.bound) {
+      resetBtn.dataset.bound = "1";
+      resetBtn.addEventListener("click", () => {
+        const ta = $("fa-lyric-paste");
+        if (ta) ta.value = "";
+        applyPastedLyrics("", true);
+      });
+    }
+    if (!bindLyricPaste._mq) {
+      const mq = window.matchMedia(PASTE_FOLD_MQ);
+      const onChange = () => placeLyricPasteRow();
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+      bindLyricPaste._mq = mq;
+    }
+    placeLyricPasteRow();
+  }
+
   function onResize() {
+    placeLyricPasteRow();
     if (!staffEl || !active && !staffEl.clientWidth) {
       updateStaff();
       return;
@@ -1049,25 +1199,35 @@
         lyricNext.textContent = "";
       } else {
         const found = lyricAtBeat(beat);
+        const total = totalBeats();
+        const curEnd = found.next ? found.next.startBeat : total;
+        const nextIdx = found.next ? lines.indexOf(found.next) : -1;
+        const nextEnd = (nextIdx >= 0 && nextIdx + 1 < lines.length) ? lines[nextIdx + 1].startBeat : total;
+        const phraseText = (line, start, end) => {
+          if (!line) return { text: "", anyPasted: false };
+          const items = labelsInRange(start, end);
+          return { text: joinPhraseLabels(items), anyPasted: items.some((x) => x.pasted), items: items };
+        };
         if (found.intro) {
           const info = eventAtBeat(beat);
           const label = (info && info.ev.section) ? info.ev.section : "前奏";
           lyricCur.classList.add("empty", "intro");
           lyricCur.textContent = label;
-          const nextText = found.next && found.next.text ? found.next.text : (found.next ? "……" : "");
-          lyricNext.textContent = nextText;
+          const nxt = phraseText(found.next, found.next ? found.next.startBeat : 0, nextEnd);
+          lyricNext.textContent = nxt.anyPasted ? nxt.text : "";
         } else {
-          const curText = found.cur && found.cur.text ? found.cur.text : "";
-          const nextText = found.next && found.next.text ? found.next.text : "";
-          if (curText) {
+          const cur = phraseText(found.cur, found.cur ? found.cur.startBeat : 0, curEnd);
+          const nxt = phraseText(found.next, found.next ? found.next.startBeat : 0, nextEnd);
+          if (cur.anyPasted) {
             lyricCur.classList.remove("empty", "intro");
-            lyricCur.textContent = curText;
+            lyricCur.textContent = cur.text;
           } else {
             lyricCur.classList.add("empty");
             lyricCur.classList.remove("intro");
-            lyricCur.textContent = found.cur ? "……" : "";
+            const nowNote = (cur.items || []).find((x) => x.note.start <= beat && beat < x.note.start + x.note.dur);
+            lyricCur.textContent = nowNote ? nowNote.label : "";
           }
-          lyricNext.textContent = nextText || (found.next ? "……" : "");
+          lyricNext.textContent = nxt.anyPasted ? nxt.text : "";
         }
       }
     }
@@ -1152,6 +1312,7 @@
     if (metro) metro.checked = metronomeOn;
     const bars = $("fa-bars");
     if (bars) bars.value = String(visibleBars);
+    updateLyricPasteUi();
     updateTimeline();
     updateStaff();
   }
@@ -1344,7 +1505,9 @@
     muteMelody = false;
     muteChord = false;
     bind();
+    loadSavedLyrics();
     buildStaff();
+    placeLyricPasteRow();
     render();
   }
 

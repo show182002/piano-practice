@@ -27,9 +27,11 @@ html, body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-input, select, textarea {
-  user-select: auto;
-  -webkit-user-select: auto;
+input, select, textarea,
+.fa-lyric-paste {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 body[data-view="practice"] {
   overflow: hidden;
@@ -632,10 +634,74 @@ body[data-view="practice"] {
   font-weight: 600;
   font-family: inherit;
 }
+.fa-under-lyric.pitch {
+  font-size: 8px;
+  letter-spacing: -0.03em;
+}
+.fa-under-lyric.lyric-ch {
+  font-size: 11px;
+  font-weight: 700;
+}
 .fa-under-lyric.empty { fill: #6a7388; letter-spacing: 0.12em; }
-.fa-under-lyric.intro { fill: var(--accent); font-weight: 700; }
+.fa-under-lyric.intro { fill: var(--accent); font-weight: 700; letter-spacing: 0.08em; }
 .fa-under-lyric.current { fill: #ffe08a; }
 .fa-under-lyric.passed { fill: #6a7388; }
+
+.fa-lyric-paste-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.fa-lyric-paste-row[hidden] { display: none !important; }
+.fa-lyric-paste-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+.fa-lyric-paste {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 2em;
+  max-height: 4.2em;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  background: #252b3c;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+}
+.fa-lyric-paste:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.fa-lyric-paste-row .btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+.fa-lyric-count {
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.practice-more .fa-lyric-paste-row {
+  width: 100%;
+  flex-wrap: wrap;
+  padding: 6px 0 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.practice-more .fa-lyric-paste {
+  min-width: 160px;
+}
 
 .reverb-label { gap: 4px; }
 .reverb-end {
