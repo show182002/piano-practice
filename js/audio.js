@@ -196,6 +196,28 @@
     return reverbPct;
   }
 
+  const contextStateListeners = [];
+
+  function hookContextState() {
+    if (!ctx || ctx._ppStateHooked) return;
+    ctx._ppStateHooked = true;
+    const emit = () => {
+      contextStateListeners.forEach((fn) => {
+        try { fn(ctx.state); } catch (_) { /* ignore */ }
+      });
+    };
+    if (typeof ctx.addEventListener === "function") ctx.addEventListener("statechange", emit);
+    else ctx.onstatechange = emit;
+  }
+
+  function onContextState(fn) {
+    if (typeof fn === "function") contextStateListeners.push(fn);
+  }
+
+  function isRunning() {
+    return !!(ctx && ctx.state === "running");
+  }
+
   function ensure() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -203,6 +225,7 @@
       setupGraph();
       startSampleLoad();
     }
+    hookContextState();
     if (ctx.state === "suspended") ctx.resume();
     return ctx;
   }
@@ -227,6 +250,7 @@
         const AC = window.AudioContext || window.webkitAudioContext;
         ctx = new AC();
         setupGraph();
+        hookContextState();
       } catch (err) {
         loadState = "error";
         loadError = err && err.message ? err.message : String(err);
@@ -475,6 +499,8 @@
     loadSamples: startSampleLoad,
     onStatus,
     getStatus,
-    isSampleReady: function () { return loadState === "ready" && buffers.size > 0; }
+    isSampleReady: function () { return loadState === "ready" && buffers.size > 0; },
+    isRunning,
+    onContextState
   };
 })(window);
