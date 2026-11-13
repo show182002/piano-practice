@@ -6,14 +6,14 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01800</title>
+  <title>鋼琴練習 · Piano Practice v0.01900</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01800</span></h1>
-      <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
+      <h1>鋼琴練習 <span class="ver">v0.01900</span></h1>
+      <p class="hint">喺下面揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
     <section class="panel home-connect">
@@ -25,22 +25,14 @@
       </div>
     </section>
 
-    <section class="song-grid">
-      <article class="song-card">
-        <div class="song-card-key">G 大調</div>
-        <h2>單車</h2>
-        <p class="song-card-artist">陳奕迅</p>
-        <p class="song-card-meta">練習用編曲（非官方譜）· 跟 C_Zhukov 簡易鋼琴譜第 1 頁</p>
-        <button type="button" class="btn primary" data-open-practice>開始練習</button>
-      </article>
-    </section>
+    <section class="song-grid" aria-label="曲目"></section>
 
     <div class="home-tools">
       <button type="button" class="btn" data-open-cof>五度圈</button>
     </div>
 
     <footer class="foot">
-      <p>v0.01800：練習頁主列改為單一播放／暫停掣（約 44 像素，空白鍵同樣係播放／暫停）、細粒「由頭」，以及圖標拍子機（關掉會記住，唔會入頁又自動開返）。「示範」同舊嘅靜音剔格改為旋律／和弦嘅 M／S（開咗會亮；預設兩條都聽到，選擇會記低）。第一次撳播放或空白鍵會自動開聲；「開聲」只喺仲未開到聲嗰陣先出現喺「更多」。MIDI 改為次要列／「更多」入面嘅細控制，連到之後只顯示狀態。左右方向鍵倒帶／快轉 5 秒。鋼琴取樣已提高音量（音量掣仍然 0–100），主路徑有安全限制器以免和弦爆音。Level 3 譜下面每個旋律音會顯示音名；作完詞可以喺「填詞」盒貼上，撳「套用」就一個字對一個音取代音名（只留喺你瀏覽器）。示範同彈奏用 Salamander 鋼琴音色（全 88 鍵、1 層力度），「殘響」可由乾調到濕。鍵盤可放大至填滿畫面闊度。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+      <p>v0.01900：主頁可選新歌《Shall We Talk》（陳奕迅；練習用編曲，並非官方譜）。Level 3 跟 LouisLiao Synthesia 簡易教學，右手旋律加左手分解／走位，C 大調、約 86 BPM（結尾原片有 rit.，練習 app 維持 86）。Level 2／1 係和弦簡化版（同一長度；其中兩個 2/4 小節各用一組和弦）。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》編曲同行為不變。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -216,6 +208,7 @@
   <script src="js/piano.js"></script>
   <script src="js/circleOfFifths.js"></script>
   <script src="js/songs/danche.js"></script>
+  <script src="js/songs/shallWeTalk.js"></script>
   <script src="js/followAlong.js"></script>
   <script src="js/app.js"></script>
 </body>

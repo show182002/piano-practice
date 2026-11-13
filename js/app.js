@@ -39,9 +39,68 @@
     }
   }
 
-  document.querySelectorAll("[data-open-practice]").forEach((btn) => {
-    btn.addEventListener("click", () => show("practice"));
-  });
+  function keyLabel(song) {
+    if (!song || !song.key) return "";
+    return song.key + " 大調";
+  }
+
+  /* 單車 stays first; any other Songs.* entries follow in registry order. */
+  function songList() {
+    const map = global.Songs || {};
+    const list = [];
+    if (map.danche) list.push(map.danche);
+    Object.keys(map).forEach((id) => {
+      if (id === "danche") return;
+      if (map[id]) list.push(map[id]);
+    });
+    return list;
+  }
+
+  function openPractice(songData) {
+    if (!songData || !global.FollowAlong) return;
+    if (typeof FollowAlong.setSong === "function") FollowAlong.setSong(songData);
+    else FollowAlong.mount(document.getElementById("fa-staff"), songData);
+    show("practice");
+  }
+
+  function renderSongGrid() {
+    const grid = document.querySelector(".song-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    songList().forEach((s) => {
+      const card = document.createElement("article");
+      card.className = "song-card";
+
+      const key = document.createElement("div");
+      key.className = "song-card-key";
+      key.textContent = keyLabel(s);
+      card.appendChild(key);
+
+      const title = document.createElement("h2");
+      title.textContent = s.title || "";
+      card.appendChild(title);
+
+      const artist = document.createElement("p");
+      artist.className = "song-card-artist";
+      artist.textContent = s.artist || "";
+      card.appendChild(artist);
+
+      const meta = document.createElement("p");
+      meta.className = "song-card-meta";
+      meta.textContent = s.disclaimer || "";
+      card.appendChild(meta);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn primary";
+      btn.textContent = "開始練習";
+      btn.addEventListener("click", () => openPractice(s));
+      card.appendChild(btn);
+
+      grid.appendChild(card);
+    });
+  }
+
   document.querySelectorAll("[data-open-cof]").forEach((btn) => {
     btn.addEventListener("click", () => show("cof"));
   });
@@ -62,5 +121,6 @@
     CircleOfFifths.mount(document.getElementById("circle-of-fifths"), { highlight: false });
   }
 
+  renderSongGrid();
   show("home");
 })(window);
