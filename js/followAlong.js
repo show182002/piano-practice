@@ -52,9 +52,10 @@
   let notationWidth = 0;
   let pxPerBeat = 48;
   let resizeObs = null;
-  let guideOn = true;
   let muteMelody = false;
   let muteChord = false;
+  let soloMelody = false;
+  let soloChord = false;
   let scrubbing = false;
   let resumeAfterScrub = false;
   let moreOpen = false;
@@ -62,6 +63,10 @@
   let pastedChars = [];
   const LYRICS_STORAGE_PREFIX = "piano-practice-lyrics-";
   const METRONOME_STORAGE = "piano-practice-metronome";
+  const MUTE_MELODY_STORAGE = "piano-practice-mute-melody";
+  const MUTE_CHORD_STORAGE = "piano-practice-mute-chord";
+  const SOLO_MELODY_STORAGE = "piano-practice-solo-melody";
+  const SOLO_CHORD_STORAGE = "piano-practice-solo-chord";
   const PASTE_FOLD_MQ = "(orientation: landscape) and (max-width: 950px), (max-height: 500px) and (orientation: landscape)";
 
   function el(tag, cls, text) {
@@ -284,31 +289,88 @@
     catch (_) { /* private mode */ }
   }
 
+  function loadSavedFlag(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null || raw === "") return fallback;
+      if (raw === "0" || raw === "false" || raw === "off") return false;
+      if (raw === "1" || raw === "true" || raw === "on") return true;
+      return fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function persistFlag(key, value) {
+    try { localStorage.setItem(key, value ? "1" : "0"); }
+    catch (_) { /* private mode */ }
+  }
+
+  function loadSavedMuteSolo() {
+    muteMelody = loadSavedFlag(MUTE_MELODY_STORAGE, false);
+    muteChord = loadSavedFlag(MUTE_CHORD_STORAGE, false);
+    soloMelody = loadSavedFlag(SOLO_MELODY_STORAGE, false);
+    soloChord = loadSavedFlag(SOLO_CHORD_STORAGE, false);
+  }
+
+  function persistMuteSolo() {
+    persistFlag(MUTE_MELODY_STORAGE, muteMelody);
+    persistFlag(MUTE_CHORD_STORAGE, muteChord);
+    persistFlag(SOLO_MELODY_STORAGE, soloMelody);
+    persistFlag(SOLO_CHORD_STORAGE, soloChord);
+  }
+
+  function melodyGuideAudible() {
+    if (soloMelody || soloChord) return soloMelody;
+    return !muteMelody;
+  }
+
+  function chordGuideAudible() {
+    if (soloMelody || soloChord) return soloChord;
+    return !muteChord;
+  }
+
   function cancelMetronomeClicks() {
     if (global.PianoAudio && typeof PianoAudio.cancelClicks === "function") {
       PianoAudio.cancelClicks();
     }
   }
 
+  function syncMetronomeButton() {
+    const metro = $("fa-metro");
+    if (!metro) return;
+    metro.classList.toggle("is-on", metronomeOn);
+    metro.setAttribute("aria-pressed", metronomeOn ? "true" : "false");
+  }
+
   function setMetronomeOn(on) {
     metronomeOn = !!on;
     persistMetronome();
     if (!metronomeOn) cancelMetronomeClicks();
-    const metro = $("fa-metro");
-    if (metro && !metro.matches(":active")) metro.checked = metronomeOn;
+    syncMetronomeButton();
   }
 
   function placeMetronome() {
     const wrap = $("fa-metro-wrap");
     const more = $("fa-more-panel");
     const moreBtn = $("fa-more");
+    const chrome = document.querySelector(".practice-chrome");
     if (!wrap || !more || !moreBtn) return;
     const fold = window.matchMedia(PASTE_FOLD_MQ).matches;
-    if (fold) {
-      if (wrap.parentElement !== more) more.insertBefore(wrap, more.firstChild);
-    } else if (wrap.parentElement !== moreBtn.parentElement || wrap.nextElementSibling !== moreBtn) {
+    if (wrap.parentElement !== moreBtn.parentElement || wrap.nextElementSibling !== moreBtn) {
       moreBtn.parentElement.insertBefore(wrap, moreBtn);
     }
+    if (!fold || !chrome) return;
+    const check = () => {
+      if (!window.matchMedia(PASTE_FOLD_MQ).matches) return;
+      const overflowing = chrome.scrollWidth > chrome.clientWidth + 1 ||
+        chrome.scrollHeight > chrome.clientHeight + 4;
+      if (overflowing && wrap.parentElement !== more) {
+        more.insertBefore(wrap, more.firstChild);
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(check);
+    else check();
   }
 
   function applyPastedLyrics(raw, persist) {
@@ -929,13 +991,14 @@
 
   function scheduleGuideAudio() {
     cancelGuideAudio();
-    if (state !== "playing" || !guideOn) return;
+    if (state !== "playing") return;
+    if (!melodyGuideAudible() && !chordGuideAudible()) return;
     if (!global.PianoAudio || typeof PianoAudio.scheduleGuide !== "function") return;
     const fromBeat = currentBeatFloat();
     const spb = secondsPerBeat();
     const eps = 1e-4;
 
-    if (!muteMelody) {
+    if (melodyGuideAudible()) {
       melodyNotes().forEach((n) => {
         const end = n.start + n.dur;
         if (end <= fromBeat + eps) return;
@@ -946,7 +1009,7 @@
       });
     }
 
-    if (!muteChord) {
+    if (chordGuideAudible()) {
       chordEvents().forEach((ev) => {
         if (ev.intro || !ev.chord) return;
         const end = ev.start + ev.dur;
@@ -1011,6 +1074,27 @@
     if (!song) return;
     if (state === "playing") pauseSong();
     else playSong();
+  }
+
+  function goToStart() {
+    if (!song) return;
+    if (state === "playing") {
+      runId += 1;
+      clearTimer();
+      stopClock();
+      cancelGuideAudio();
+      cancelMetronomeClicks();
+      finished = false;
+      beatIndex = 0;
+      state = "paused";
+      playSong();
+      return;
+    }
+    finished = false;
+    beatIndex = 0;
+    cancelGuideAudio();
+    if (active) highlightCurrent();
+    render();
   }
 
   function isTypingTarget(el) {
@@ -1130,31 +1214,39 @@
     });
   }
 
+  function syncMsButtons() {
+    function sync(id, on) {
+      const el = $(id);
+      if (!el) return;
+      el.classList.toggle("is-on", !!on);
+      el.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    sync("fa-mute-melody", muteMelody);
+    sync("fa-mute-chord", muteChord);
+    sync("fa-solo-melody", soloMelody);
+    sync("fa-solo-chord", soloChord);
+  }
+
+  function bindMsButton(id, getter, setter) {
+    const el = $(id);
+    if (!el || el.dataset.bound) return;
+    el.dataset.bound = "1";
+    el.addEventListener("click", () => {
+      setter(!getter());
+      persistMuteSolo();
+      syncMsButtons();
+      if (state === "playing") scheduleGuideAudio();
+    });
+  }
+
   function bindGuideControls() {
-    const guide = $("fa-guide");
-    const muteMel = $("fa-mute-melody");
-    const muteCh = $("fa-mute-chord");
     const hlMel = $("fa-hl-melody");
     const hlCh = $("fa-hl-chord");
-    if (guide && !guide.dataset.bound) {
-      guide.dataset.bound = "1";
-      guide.checked = guideOn;
-      guide.addEventListener("change", (e) => {
-        guideOn = !!e.target.checked;
-        if (state === "playing") scheduleGuideAudio();
-        else cancelGuideAudio();
-      });
-    }
-    function bindMute(el, setter) {
-      if (!el || el.dataset.bound) return;
-      el.dataset.bound = "1";
-      el.addEventListener("change", (e) => {
-        setter(!!e.target.checked);
-        if (state === "playing") scheduleGuideAudio();
-      });
-    }
-    bindMute(muteMel, (v) => { muteMelody = v; });
-    bindMute(muteCh, (v) => { muteChord = v; });
+    bindMsButton("fa-mute-melody", () => muteMelody, (v) => { muteMelody = v; });
+    bindMsButton("fa-mute-chord", () => muteChord, (v) => { muteChord = v; });
+    bindMsButton("fa-solo-melody", () => soloMelody, (v) => { soloMelody = v; });
+    bindMsButton("fa-solo-chord", () => soloChord, (v) => { soloChord = v; });
+    syncMsButtons();
     if (hlMel && !hlMel.dataset.bound) {
       hlMel.dataset.bound = "1";
       hlMel.addEventListener("change", syncHighlightToggles);
@@ -1167,15 +1259,19 @@
 
   function bind() {
     const play = $("fa-play");
-    const pause = $("fa-pause");
-    const stop = $("fa-stop");
+    const restart = $("fa-restart");
     const level = $("fa-level");
     const bpmEl = $("fa-bpm");
     const metro = $("fa-metro");
     const bars = $("fa-bars");
-    if (play) play.addEventListener("click", playSong);
-    if (pause) pause.addEventListener("click", pauseSong);
-    if (stop) stop.addEventListener("click", () => stopSong({}));
+    if (play && !play.dataset.bound) {
+      play.dataset.bound = "1";
+      play.addEventListener("click", togglePlayPause);
+    }
+    if (restart && !restart.dataset.bound) {
+      restart.dataset.bound = "1";
+      restart.addEventListener("click", goToStart);
+    }
     if (level) {
       level.innerHTML = "";
       song.levels.forEach((lv) => {
@@ -1195,11 +1291,9 @@
     }
     if (metro && !metro.dataset.bound) {
       metro.dataset.bound = "1";
-      metro.checked = metronomeOn;
-      metro.addEventListener("change", (e) => { setMetronomeOn(!!e.target.checked); });
-    } else if (metro) {
-      metro.checked = metronomeOn;
+      metro.addEventListener("click", () => { setMetronomeOn(!metronomeOn); });
     }
+    syncMetronomeButton();
     if (bars) {
       bars.value = String(visibleBars);
       bars.addEventListener("change", (e) => setVisibleBars(Number(e.target.value)));
@@ -1390,27 +1484,23 @@
     }
 
     const playBtn = $("fa-play");
-    const pauseBtn = $("fa-pause");
-    const stopBtn = $("fa-stop");
     const playing = state === "playing";
-    if (playBtn) playBtn.disabled = playing;
-    if (pauseBtn) pauseBtn.disabled = !playing;
-    if (stopBtn) stopBtn.disabled = state === "stopped" && !finished;
+    if (playBtn) {
+      playBtn.disabled = false;
+      playBtn.classList.toggle("is-playing", playing);
+      const label = playing ? "暫停" : "播放";
+      playBtn.setAttribute("aria-label", label);
+      playBtn.setAttribute("title", label);
+    }
     const stage = document.querySelector(".practice-stage");
     if (stage) stage.classList.toggle("is-playing", playing);
-    const guide = $("fa-guide");
-    if (guide) guide.checked = guideOn;
-    const muteMel = $("fa-mute-melody");
-    if (muteMel) muteMel.checked = muteMelody;
-    const muteCh = $("fa-mute-chord");
-    if (muteCh) muteCh.checked = muteChord;
+    syncMsButtons();
     if (bpmVal) bpmVal.textContent = String(bpm);
     const bpmEl = $("fa-bpm");
     if (bpmEl && !bpmEl.matches(":active")) bpmEl.value = String(bpm);
     const levelEl = $("fa-level");
     if (levelEl) levelEl.value = String(levelId);
-    const metro = $("fa-metro");
-    if (metro && !metro.matches(":active")) metro.checked = metronomeOn;
+    syncMetronomeButton();
     const bars = $("fa-bars");
     if (bars) bars.value = String(visibleBars);
     updateLyricPasteUi();
@@ -1467,7 +1557,8 @@
 
   function playSong() {
     if (!song) return;
-    PianoAudio.ensure();
+    if (global.PianoUI && typeof PianoUI.unlockAudio === "function") PianoUI.unlockAudio();
+    else if (global.PianoAudio) PianoAudio.ensure();
     if (state === "playing") return;
     if (finished || beatIndex >= totalBeats()) {
       finished = false;
@@ -1600,13 +1691,11 @@
     levelId = defaultLevelId(song);
     bpm = clampBpm(song.defaultBpm || 68);
     metronomeOn = loadSavedMetronome();
+    loadSavedMuteSolo();
     visibleBars = DEFAULT_BARS;
     state = "stopped";
     finished = false;
     beatIndex = 0;
-    guideOn = true;
-    muteMelody = false;
-    muteChord = false;
     bind();
     loadSavedLyrics();
     buildStaff();

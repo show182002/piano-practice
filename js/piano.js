@@ -267,32 +267,53 @@
       el.textContent = s.text;
       el.className = "midi-status status" + (s.cls ? " " + s.cls : "");
     });
+    const connected = s.cls === "ok" || s.cls === "warn";
+    document.querySelectorAll(".practice-midi").forEach((el) => {
+      el.classList.toggle("is-connected", connected);
+    });
+  }
+
+  function syncAudioUnlockUi() {
+    const running = !!(global.PianoAudio && typeof PianoAudio.isRunning === "function" && PianoAudio.isRunning());
+    document.querySelectorAll(".practice-audio-fallback").forEach((b) => {
+      b.hidden = running;
+    });
+    if (running) {
+      document.querySelectorAll(".btn-audio").forEach((b) => {
+        if (!b.classList.contains("practice-audio-fallback")) b.textContent = "已開聲";
+      });
+    }
+  }
+
+  function unlockAudio() {
+    if (!global.PianoAudio) return;
+    PianoAudio.ensure();
+    if (PianoAudio.loadSamples) PianoAudio.loadSamples();
+    const v = document.querySelector(".volume, #volume");
+    if (v) PianoAudio.setVolume(Number(v.value));
+    const r = document.querySelector(".reverb, #fa-reverb");
+    if (r) PianoAudio.setReverb(Number(r.value));
+    else if (PianoAudio.getReverb) PianoAudio.setReverb(PianoAudio.getReverb());
+    syncAudioUnlockUi();
   }
 
   function bindControlGroup(root) {
     const scope = root && root.querySelector ? root : document;
-    const btnAudio = scope.querySelector(".btn-audio") || scope.querySelector("#btn-audio");
-    const btnMidi = scope.querySelector(".btn-midi") || scope.querySelector("#btn-midi");
+    const audioBtns = scope.querySelectorAll(".btn-audio, #btn-audio");
+    const midiBtns = scope.querySelectorAll(".btn-midi, #btn-midi");
     const octaveSel = scope.querySelector(".octave-offset") || scope.querySelector("#octave-offset");
     const volume = scope.querySelector(".volume") || scope.querySelector("#volume");
-    if (btnAudio && !btnAudio.dataset.bound) {
+    audioBtns.forEach((btnAudio) => {
+      if (btnAudio.dataset.bound) return;
       btnAudio.dataset.bound = "1";
-      btnAudio.addEventListener("click", async () => {
-        PianoAudio.ensure();
-        PianoAudio.loadSamples && PianoAudio.loadSamples();
-        const v = volume || document.querySelector(".volume, #volume");
-        if (v) PianoAudio.setVolume(Number(v.value));
-        const r = scope.querySelector(".reverb, #fa-reverb") || document.querySelector(".reverb, #fa-reverb");
-        if (r) PianoAudio.setReverb(Number(r.value));
-        else if (PianoAudio.getReverb) PianoAudio.setReverb(PianoAudio.getReverb());
-        document.querySelectorAll(".btn-audio").forEach((b) => { b.textContent = "已開聲"; });
-      });
-    }
-    if (btnMidi && !btnMidi.dataset.bound) {
+      btnAudio.addEventListener("click", () => { unlockAudio(); });
+    });
+    midiBtns.forEach((btnMidi) => {
+      if (btnMidi.dataset.bound) return;
       btnMidi.dataset.bound = "1";
       btnMidi.addEventListener("click", async () => {
         try {
-          PianoAudio.ensure();
+          unlockAudio();
           await PianoMidi.connect();
           updateMidiStatus();
           setInterval(updateMidiStatus, 1500);
@@ -301,9 +322,12 @@
             el.textContent = "MIDI：" + (err && err.message ? err.message : String(err));
             el.className = "midi-status status err";
           });
+          document.querySelectorAll(".practice-midi").forEach((el) => {
+            el.classList.remove("is-connected");
+          });
         }
       });
-    }
+    });
     if (octaveSel && !octaveSel.dataset.bound) {
       octaveSel.dataset.bound = "1";
       octaveSel.addEventListener("change", () => {
@@ -598,6 +622,11 @@
     if (global.PianoAudio && typeof PianoAudio.onStatus === "function") {
       PianoAudio.onStatus(syncSampleStatus);
     }
+    if (global.PianoAudio && typeof PianoAudio.onContextState === "function") {
+      PianoAudio.onContextState(syncAudioUnlockUi);
+    }
+    syncAudioUnlockUi();
+    updateMidiStatus();
   }
 
   window.addEventListener("resize", onViewportChange);
@@ -627,6 +656,8 @@
     getStartMidi: () => START_MIDI,
     getKeyCount: () => KEY_COUNT,
     getKeyboardEl: () => keyboard,
+    unlockAudio,
+    syncAudioUnlockUi,
     keyMetrics: () => {
       const m = metrics();
       return {

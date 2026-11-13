@@ -6,14 +6,14 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01701</title>
+  <title>鋼琴練習 · Piano Practice v0.01800</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01701</span></h1>
-      <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
+      <h1>鋼琴練習 <span class="ver">v0.01800</span></h1>
+      <p class="hint">揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
     <section class="panel home-connect">
@@ -40,7 +40,7 @@
     </div>
 
     <footer class="foot">
-      <p>v0.01701：鋼琴取樣已提高音量（音量掣仍然 0–100，開到最大會再大聲啲），主路徑加咗安全限制器以免和弦爆音。拍子機掣已放到「示範」旁邊，關掉會記住，唔會一入練習頁又自動開返。練習頁可用空白鍵播放／暫停，左右方向鍵倒帶／快轉 5 秒。Level 3 譜下面每個旋律音會顯示音名；作完詞可以喺「填詞」盒貼上，撳「套用」就一個字對一個音取代音名（只留喺你瀏覽器）。示範同彈奏用 Salamander 鋼琴音色（全 88 鍵、1 層力度），「殘響」可由乾調到濕。鍵盤可放大至填滿畫面闊度，譜號已換成正規高音／低音譜號。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
+      <p>v0.01800：練習頁主列改為單一播放／暫停掣（約 44 像素，空白鍵同樣係播放／暫停）、細粒「由頭」，以及圖標拍子機（關掉會記住，唔會入頁又自動開返）。「示範」同舊嘅靜音剔格改為旋律／和弦嘅 M／S（開咗會亮；預設兩條都聽到，選擇會記低）。第一次撳播放或空白鍵會自動開聲；「開聲」只喺仲未開到聲嗰陣先出現喺「更多」。MIDI 改為次要列／「更多」入面嘅細控制，連到之後只顯示狀態。左右方向鍵倒帶／快轉 5 秒。鋼琴取樣已提高音量（音量掣仍然 0–100），主路徑有安全限制器以免和弦爆音。Level 3 譜下面每個旋律音會顯示音名；作完詞可以喺「填詞」盒貼上，撳「套用」就一個字對一個音取代音名（只留喺你瀏覽器）。示範同彈奏用 Salamander 鋼琴音色（全 88 鍵、1 層力度），「殘響」可由乾調到濕。鍵盤可放大至填滿畫面闊度。和弦進行同旋律係練習用編曲，並非官方譜。官方歌詞不會預載於公開網站。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -61,32 +61,57 @@
     <div class="practice-stage">
       <div class="practice-chrome">
         <button type="button" class="btn chrome-back" data-open-home>返回</button>
-        <button type="button" class="btn primary btn-audio chrome-desk">開聲</button>
-        <button type="button" class="btn btn-midi chrome-desk">連接 MIDI</button>
-        <span class="midi-status status chrome-desk">MIDI：未連接</span>
 
         <div class="fa-transport-btns" role="group" aria-label="播放控制">
-          <button type="button" class="btn-transport is-play" id="fa-play" aria-label="播放" title="播放">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.8v14.4L20.2 12 8 4.8z" fill="currentColor"/></svg>
+          <button type="button" class="btn-transport is-play-pause" id="fa-play" aria-label="播放" title="播放">
+            <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.8v14.4L20.2 12 8 4.8z" fill="currentColor"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/></svg>
           </button>
-          <button type="button" class="btn-transport is-pause" id="fa-pause" aria-label="暫停" title="暫停">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/></svg>
-          </button>
-          <button type="button" class="btn-transport is-stop" id="fa-stop" aria-label="停止" title="停止">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.4" y="6.4" width="11.2" height="11.2" rx="1.6" fill="currentColor"/></svg>
+          <button type="button" class="btn-transport is-restart" id="fa-restart" aria-label="由頭" title="由頭">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4.2" y="5" width="2.2" height="14" rx="0.8" fill="currentColor"/>
+              <path d="M19.5 5.2v13.6L8.2 12 19.5 5.2z" fill="currentColor"/>
+            </svg>
           </button>
         </div>
 
-        <label class="chrome-label"><input type="checkbox" id="fa-guide" checked />示範</label>
-        <label class="chrome-label" id="fa-metro-wrap"><input type="checkbox" id="fa-metro" checked />拍子機</label>
-        <button type="button" class="btn btn-more" id="fa-more" aria-expanded="false" aria-controls="fa-more-panel">更多</button>
-        <span class="sample-status status" data-sample-status></span>
+        <span class="fa-metro-wrap" id="fa-metro-wrap">
+          <button type="button" class="btn-transport is-metro" id="fa-metro" aria-label="拍子機" title="拍子機" aria-pressed="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7.5 21h9l2.2-12.2L12 3 5.3 8.8 7.5 21z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M8.3 21L14.8 6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <circle cx="16.3" cy="8.1" r="1.45" fill="currentColor"/>
+              <path d="M8.2 16.4h7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </span>
+
+        <div class="fa-tracks" role="group" aria-label="示範音軌">
+          <div class="fa-track">
+            <span class="fa-track-name">旋律</span>
+            <button type="button" class="btn-ms is-mute" id="fa-mute-melody" aria-pressed="false" aria-label="靜音旋律" title="靜音旋律">M</button>
+            <button type="button" class="btn-ms is-solo" id="fa-solo-melody" aria-pressed="false" aria-label="只聽旋律" title="只聽旋律">S</button>
+          </div>
+          <div class="fa-track">
+            <span class="fa-track-name">和弦</span>
+            <button type="button" class="btn-ms is-mute" id="fa-mute-chord" aria-pressed="false" aria-label="靜音和弦" title="靜音和弦">M</button>
+            <button type="button" class="btn-ms is-solo" id="fa-solo-chord" aria-pressed="false" aria-label="只聽和弦" title="只聽和弦">S</button>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-more" id="fa-more" aria-expanded="false" aria-controls="fa-more-panel" aria-label="更多" title="更多">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M14 5v4M4 17h4M10 17h10M8 15v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
 
       <div class="practice-more" id="fa-more-panel">
-        <button type="button" class="btn primary btn-audio chrome-phone">開聲</button>
-        <button type="button" class="btn btn-midi chrome-phone">連接 MIDI</button>
-        <span class="midi-status status chrome-phone">MIDI：未連接</span>
+        <button type="button" class="btn primary btn-audio practice-audio-fallback" id="fa-audio-fallback" hidden>開聲</button>
+        <span class="practice-midi" id="fa-midi-wrap">
+          <button type="button" class="btn btn-midi btn-midi-compact">連接 MIDI</button>
+          <span class="midi-status status">MIDI：未連接</span>
+        </span>
         <label class="chrome-label">Level
           <select id="fa-level"></select>
         </label>
@@ -101,10 +126,6 @@
         <span class="chrome-group">鍵盤顯示：
           <label class="chrome-label"><input type="checkbox" id="fa-hl-melody" checked />旋律</label>
           <label class="chrome-label"><input type="checkbox" id="fa-hl-chord" checked />和弦</label>
-        </span>
-        <span class="chrome-group">靜音：
-          <label class="chrome-label"><input type="checkbox" id="fa-mute-melody" />旋律</label>
-          <label class="chrome-label"><input type="checkbox" id="fa-mute-chord" />和弦</label>
         </span>
         <label class="chrome-label">八度
           <select class="octave-offset">
@@ -121,6 +142,7 @@
           <input class="reverb" id="fa-reverb" type="range" min="0" max="100" value="40" />
           <span class="reverb-end">濕</span>
         </label>
+        <span class="sample-status status" data-sample-status></span>
       </div>
 
       <div class="fa-transport">
