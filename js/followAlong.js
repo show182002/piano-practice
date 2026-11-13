@@ -113,9 +113,75 @@
     return progression().reduce((s, ev) => s + ev.beats, 0);
   }
 
+  /* Optional song.barLengths: beats for each sounding bar after the pickup.
+     Lets a 2-beat bar keep later barlines in place. Songs without it (e.g.
+     《單車》) keep a uniform beatsPerBar and the original code path. */
+  function barLengths() {
+    const list = song && song.barLengths;
+    return (list && list.length) ? list : null;
+  }
+
+  function isBarlineAt(beat) {
+    const pickup = pickupBeats();
+    if (beat === 0) return true;
+    if (beat < pickup) return false;
+    const lengths = barLengths();
+    if (!lengths) {
+      return beat >= pickup && (beat - pickup) % beatsPerBar() === 0;
+    }
+    let t = pickup;
+    if (beat === t) return true;
+    for (let i = 0; i < lengths.length; i++) {
+      t += lengths[i];
+      if (beat === t) return true;
+      if (t > beat) return false;
+    }
+    return false;
+  }
+
+  function barInfo(beat) {
+    const pickup = pickupBeats();
+    const bpb = beatsPerBar();
+    if (beat < pickup) {
+      return { bar: 0, start: 0, beats: pickup || bpb, beatInBar: beat + 1 };
+    }
+    const lengths = barLengths();
+    if (!lengths) {
+      const bar = Math.floor((beat - pickup) / bpb) + 1;
+      const start = pickup + (bar - 1) * bpb;
+      return { bar: bar, start: start, beats: bpb, beatInBar: beat - start + 1 };
+    }
+    let t = pickup;
+    for (let i = 0; i < lengths.length; i++) {
+      const next = t + lengths[i];
+      if (beat < next) {
+        return { bar: i + 1, start: t, beats: lengths[i], beatInBar: beat - t + 1 };
+      }
+      t = next;
+    }
+    const last = lengths.length;
+    const start = t - (lengths[last - 1] || bpb);
+    return { bar: last, start: start, beats: lengths[last - 1] || bpb, beatInBar: beat - start + 1 };
+  }
+
   function melodyNotes() {
     const lv = currentLevel();
     return (lv.melody && lv.melody.length) ? lv.melody : (song.melody || []);
+  }
+
+  /* Explicit LH / accompaniment notes for Level 3 arrangements that follow
+     a performance rather than generated block voicings. Same shape as melody:
+     [{start, dur, name, midi}, ...]. Accept `accompaniment` or `leftHand`. */
+  function accompanimentNotes() {
+    const lv = currentLevel();
+    const fromLevel = lv && (lv.accompaniment || lv.leftHand);
+    const fromSong = song && (song.accompaniment || song.leftHand);
+    const arr = (fromLevel && fromLevel.length) ? fromLevel : (fromSong || []);
+    return (arr && arr.length) ? arr : [];
+  }
+
+  function hasAccompaniment() {
+    return accompanimentNotes().length > 0;
   }
 
   function lyricsList() {
@@ -127,9 +193,12 @@
 
   function barNumber(beat) {
     const pickup = pickupBeats();
-    const bpb = beatsPerBar();
     if (beat < pickup) return 0;
-    return Math.floor((beat - pickup) / bpb) + 1;
+    if (!barLengths()) {
+      const bpb = beatsPerBar();
+      return Math.floor((beat - pickup) / bpb) + 1;
+    }
+    return barInfo(beat).bar;
   }
 
   function sungBarSet() {
@@ -452,6 +521,9 @@
   }
 
   function currentChordVoicing(beat) {
+    if (hasAccompaniment()) {
+      return accompanimentNotes().filter((n) => n.start <= beat && beat < n.start + n.dur);
+    }
     if (isIntroBeat(beat)) return [];
     const cap = Math.min(Math.floor(beat), Math.max(0, totalBeats() - 1));
     const info = eventAtBeat(cap);
@@ -628,6 +700,11 @@
     return y > staffMid;
   }
 
+  function staffCacheKey() {
+    const width = viewWidth();
+    return (song && song.id ? song.id : "") + ":" + levelId + ":" + visibleBars + ":" + Math.round(width);
+  }
+
   function buildStaff() {
     if (!staffEl) return;
     const width = viewWidth();
@@ -684,7 +761,7 @@
     svg.appendChild(playheadEl);
 
     staffEl.appendChild(svg);
-    builtKey = levelId + ":" + visibleBars + ":" + Math.round(width);
+    builtKey = staffCacheKey();
     updateStaff();
   }
 
@@ -776,12 +853,15 @@
     const bpb = beatsPerBar();
     const pickup = pickupBeats();
     const total = totalBeats();
+    const lengths = barLengths();
     const barAcc = new Map();
 
     // Beat ticks + barlines + numbers
     for (let i = 0; i <= total; i++) {
       const x = xOfBeat(i);
-      const isBar = i === 0 || (i >= pickup && (i - pickup) % bpb === 0);
+      const isBar = lengths
+        ? isBarlineAt(i)
+        : (i === 0 || (i >= pickup && (i - pickup) % bpb === 0));
       if (isBar) {
         scrollG.appendChild(svgEl("line", {
           class: "fa-barline",
@@ -790,7 +870,16 @@
           x2: x,
           y2: BASS_BOTTOM
         }));
-        const barNum = i <= pickup ? (i === 0 ? "起拍" : "") : String(Math.floor((i - pickup) / bpb) + 1);
+        let barNum;
+        if (!lengths) {
+          barNum = i <= pickup ? (i === 0 ? "起拍" : "") : String(Math.floor((i - pickup) / bpb) + 1);
+        } else if (pickup > 0 && i < pickup) {
+          barNum = i === 0 ? "起拍" : "";
+        } else if (i >= total) {
+          barNum = "";
+        } else {
+          barNum = String(barNumber(i));
+        }
         if (barNum) {
           scrollG.appendChild(svgEl("text", {
             class: "fa-bar-num",
@@ -841,7 +930,9 @@
         }, pretty(ev.chord));
         scrollG.appendChild(sym);
 
-        const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS);
+        /* When an explicit LH track exists, skip generated block voicings
+           so notes are not doubled. Symbols still appear for learning. */
+        const voicing = hasAccompaniment() ? [] : (MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS) || []);
         if (voicing.length) {
           const g = svgEl("g", {
             class: "fa-cnotes",
@@ -904,7 +995,67 @@
       scrollG.appendChild(g);
     });
 
+    drawAccompanimentOnBass();
     drawLyricsUnderStaff();
+  }
+
+  function drawAccompanimentOnBass() {
+    const notes = accompanimentNotes().slice().sort((a, b) => {
+      const ds = a.start - b.start;
+      if (ds) return ds;
+      return (a.midi || 0) - (b.midi || 0);
+    });
+    if (!notes.length) return;
+    const accMap = new Map();
+    const midY = (BASS_TOP + BASS_BOTTOM) / 2;
+    let i = 0;
+    while (i < notes.length) {
+      const start = notes[i].start;
+      const group = [];
+      while (i < notes.length && Math.abs(notes[i].start - start) < 1e-6) {
+        group.push(notes[i]);
+        i++;
+      }
+      const end = start + Math.max.apply(null, group.map((n) => n.dur));
+      const g = svgEl("g", {
+        class: "fa-cnotes",
+        "data-start": String(start),
+        "data-end": String(end)
+      });
+      const cx = xOfBeat(start) + Math.min(9, pxPerBeat * 0.2);
+      const placed = group.map((n) => ({ n, y: yBass(n.name) }));
+      placed.forEach((p) => {
+        addLedgers(g, cx, ledgerLines(p.y, BASS_TOP, BASS_BOTTOM));
+        const acc = neededAccidental(p.n.name, start, accMap);
+        if (acc) {
+          g.appendChild(svgEl("text", {
+            class: "fa-acc",
+            x: cx - 14,
+            y: p.y + 3.2
+          }, accGlyph(acc)));
+        }
+        g.appendChild(drawHead(cx, p.y, durStyle(p.n.dur).open));
+        if (isDotted(p.n.dur)) g.appendChild(drawDot(cx, p.y));
+      });
+      const style = durStyle(Math.min.apply(null, group.map((n) => n.dur)));
+      if (style.stem && placed.length) {
+        const ys = placed.map((p) => p.y);
+        const yLow = Math.max.apply(null, ys);  // visually lower (larger y)
+        const yHigh = Math.min.apply(null, ys);
+        const mid = (yLow + yHigh) / 2;
+        /* High pitches (small y, toward / into the treble gap) stem down
+           into the bass staff to limit collisions with the melody. */
+        const up = mid > midY;
+        const y1 = up ? yLow : yHigh;
+        const extreme = up ? yHigh : yLow;
+        const len = placed.length > 1
+          ? Math.abs(extreme - y1) + SPACE * 2.4
+          : (SPACE * 3.2);
+        g.appendChild(drawStem(cx, y1, up, len));
+        if (style.flags) g.appendChild(drawFlags(cx, y1, up, style.flags));
+      }
+      scrollG.appendChild(g);
+    }
   }
 
   function drawLyricsUnderStaff() {
@@ -1010,19 +1161,30 @@
     }
 
     if (chordGuideAudible()) {
-      chordEvents().forEach((ev) => {
-        if (ev.intro || !ev.chord) return;
-        const end = ev.start + ev.dur;
-        if (end <= fromBeat + eps) return;
-        const start = Math.max(ev.start, fromBeat);
-        const durSec = (end - start) * spb;
-        if (durSec <= 0.03) return;
-        const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS) || [];
-        const t = audioTimeOfBeat(start);
-        voicing.forEach((v) => {
-          PianoAudio.scheduleGuide(v.midi, t, durSec, { velocity: 78, gain: 0.52 });
+      if (hasAccompaniment()) {
+        accompanimentNotes().forEach((n) => {
+          const end = n.start + n.dur;
+          if (end <= fromBeat + eps) return;
+          const start = Math.max(n.start, fromBeat);
+          const durSec = (end - start) * spb;
+          if (durSec <= 0.02) return;
+          PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 78, gain: 0.52 });
         });
-      });
+      } else {
+        chordEvents().forEach((ev) => {
+          if (ev.intro || !ev.chord) return;
+          const end = ev.start + ev.dur;
+          if (end <= fromBeat + eps) return;
+          const start = Math.max(ev.start, fromBeat);
+          const durSec = (end - start) * spb;
+          if (durSec <= 0.03) return;
+          const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS) || [];
+          const t = audioTimeOfBeat(start);
+          voicing.forEach((v) => {
+            PianoAudio.scheduleGuide(v.midi, t, durSec, { velocity: 78, gain: 0.52 });
+          });
+        });
+      }
     }
   }
 
@@ -1273,21 +1435,20 @@
       restart.addEventListener("click", goToStart);
     }
     if (level) {
-      level.innerHTML = "";
-      song.levels.forEach((lv) => {
-        const opt = document.createElement("option");
-        opt.value = String(lv.id);
-        opt.textContent = lv.name;
-        if (lv.id === levelId) opt.selected = true;
-        level.appendChild(opt);
-      });
-      level.addEventListener("change", (e) => setLevel(Number(e.target.value)));
+      fillLevelSelect();
+      if (!level.dataset.bound) {
+        level.dataset.bound = "1";
+        level.addEventListener("change", (e) => setLevel(Number(e.target.value)));
+      }
     }
     if (bpmEl) {
       bpmEl.min = String(MIN_BPM);
       bpmEl.max = String(MAX_BPM);
       bpmEl.value = String(bpm);
-      bpmEl.addEventListener("input", (e) => setBpm(Number(e.target.value), { fromSlider: true }));
+      if (!bpmEl.dataset.bound) {
+        bpmEl.dataset.bound = "1";
+        bpmEl.addEventListener("input", (e) => setBpm(Number(e.target.value), { fromSlider: true }));
+      }
     }
     if (metro && !metro.dataset.bound) {
       metro.dataset.bound = "1";
@@ -1296,7 +1457,10 @@
     syncMetronomeButton();
     if (bars) {
       bars.value = String(visibleBars);
-      bars.addEventListener("change", (e) => setVisibleBars(Number(e.target.value)));
+      if (!bars.dataset.bound) {
+        bars.dataset.bound = "1";
+        bars.addEventListener("change", (e) => setVisibleBars(Number(e.target.value)));
+      }
     }
     bindGuideControls();
     bindMoreButton();
@@ -1304,11 +1468,38 @@
     bindPracticeKeys();
     bindLyricPaste();
     syncHighlightToggles();
-    window.addEventListener("resize", onResize);
-    if (typeof ResizeObserver === "function" && staffEl) {
-      resizeObs = new ResizeObserver(() => onResize());
-      resizeObs.observe(staffEl);
+    if (!bind._resizeBound) {
+      bind._resizeBound = true;
+      window.addEventListener("resize", onResize);
+      if (typeof ResizeObserver === "function" && staffEl) {
+        resizeObs = new ResizeObserver(() => onResize());
+        resizeObs.observe(staffEl);
+      }
     }
+  }
+
+  function fillLevelSelect() {
+    const level = $("fa-level");
+    if (!level || !song) return;
+    level.innerHTML = "";
+    song.levels.forEach((lv) => {
+      const opt = document.createElement("option");
+      opt.value = String(lv.id);
+      opt.textContent = lv.name;
+      if (lv.id === levelId) opt.selected = true;
+      level.appendChild(opt);
+    });
+  }
+
+  function syncBpmControls() {
+    const bpmEl = $("fa-bpm");
+    if (bpmEl) {
+      bpmEl.min = String(MIN_BPM);
+      bpmEl.max = String(MAX_BPM);
+      bpmEl.value = String(bpm);
+    }
+    const bpmVal = $("fa-bpm-val");
+    if (bpmVal) bpmVal.textContent = String(bpm);
   }
 
   function bindLyricPaste() {
@@ -1345,8 +1536,7 @@
       updateStaff();
       return;
     }
-    const width = viewWidth();
-    const key = levelId + ":" + visibleBars + ":" + Math.round(width);
+    const key = staffCacheKey();
     if (key !== builtKey) buildStaff();
     else updateStaff();
   }
@@ -1466,12 +1656,16 @@
     const mel = melodyAtBeat(beat);
     const abs = cap;
     const afterPickup = Math.max(0, abs - pickup);
-    const bar = abs < pickup ? "起拍" : ("第 " + (Math.floor(afterPickup / bpb) + 1) + " 小節");
-    const beatInBar = abs < pickup ? (abs + 1) : ((afterPickup % bpb) + 1);
+    const infoBar = barInfo(abs);
+    const bar = abs < pickup
+      ? "起拍"
+      : ("第 " + (barLengths() ? infoBar.bar : (Math.floor(afterPickup / bpb) + 1)) + " 小節");
+    const beatInBar = abs < pickup ? (abs + 1) : (barLengths() ? infoBar.beatInBar : ((afterPickup % bpb) + 1));
+    const beatsThisBar = abs < pickup ? bpb : (barLengths() ? infoBar.beats : bpb);
     const section = info && info.ev.section ? info.ev.section : "";
     const noteBit = mel ? (" · " + prettyNote(mel.name)) : "";
     if (beatsEl) {
-      const beatBit = abs < pickup ? "" : (" · 拍 " + beatInBar + "/" + bpb);
+      const beatBit = abs < pickup ? "" : (" · 拍 " + beatInBar + "/" + beatsThisBar);
       beatsEl.textContent = [section, bar].filter(Boolean).join(" · ") + beatBit + noteBit;
     }
 
@@ -1540,7 +1734,9 @@
         return;
       }
       const pickup = pickupBeats();
-      const accent = idx >= pickup && (idx - pickup) % beatsPerBar() === 0;
+      const accent = barLengths()
+        ? (idx >= pickup && isBarlineAt(idx))
+        : (idx >= pickup && (idx - pickup) % beatsPerBar() === 0);
       if (metronomeOn) PianoAudio.click(nextBeatTime, accent);
       const beatTime = nextBeatTime;
       const thisIdx = idx;
@@ -1666,8 +1862,7 @@
 
   function activate() {
     active = true;
-    const width = viewWidth();
-    const key = levelId + ":" + visibleBars + ":" + Math.round(width);
+    const key = staffCacheKey();
     if (builtKey !== key) buildStaff();
     highlightCurrent();
     render();
@@ -1685,6 +1880,45 @@
     return songData.levels[songData.levels.length - 1].id;
   }
 
+  function resetPlayhead() {
+    state = "stopped";
+    finished = false;
+    beatIndex = 0;
+    anchorBeat = 0;
+    anchorAudioTime = 0;
+    scheduledBeatIndex = 0;
+    nextBeatTime = 0;
+  }
+
+  /* Switch the mounted practice song without re-binding controls.
+     Resets title, levels, BPM default, key, melody, lyrics slots,
+     paste-box storage key, and playhead. Metronome / M/S persist. */
+  function setSong(songData) {
+    if (!songData || !songData.levels || !songData.levels.length) return;
+    if (state === "playing" || state === "paused") {
+      runId += 1;
+      clearTimer();
+      stopClock();
+      cancelGuideAudio();
+      cancelMetronomeClicks();
+    }
+    song = songData;
+    levelId = defaultLevelId(song);
+    bpm = clampBpm(song.defaultBpm || 68);
+    resetPlayhead();
+    builtKey = null;
+    fillLevelSelect();
+    syncBpmControls();
+    loadSavedLyrics();
+    if (staffEl) buildStaff();
+    placeLyricPasteRow();
+    if (active) highlightCurrent();
+    else if (global.PianoUI && PianoUI.setHighlights) {
+      PianoUI.setHighlights({ chordMidis: [], melodyMidi: null, clearChords: true });
+    }
+    render();
+  }
+
   function mount(container, songData) {
     staffEl = container;
     song = songData;
@@ -1693,9 +1927,7 @@
     metronomeOn = loadSavedMetronome();
     loadSavedMuteSolo();
     visibleBars = DEFAULT_BARS;
-    state = "stopped";
-    finished = false;
-    beatIndex = 0;
+    resetPlayhead();
     bind();
     loadSavedLyrics();
     buildStaff();
@@ -1705,6 +1937,7 @@
 
   global.FollowAlong = {
     mount,
+    setSong,
     activate,
     deactivate,
     play: playSong,
