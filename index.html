@@ -6,13 +6,13 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.01900</title>
+  <title>鋼琴練習 · Piano Practice v0.02000</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.01900</span></h1>
+      <h1>鋼琴練習 <span class="ver">v0.02000</span></h1>
       <p class="hint">喺下面揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
@@ -32,7 +32,7 @@
     </div>
 
     <footer class="foot">
-      <p>v0.01900：主頁可選新歌《Shall We Talk》（陳奕迅；練習用編曲，並非官方譜）。Level 3 跟 LouisLiao Synthesia 簡易教學，右手旋律加左手分解／走位，C 大調、約 86 BPM（結尾原片有 rit.，練習 app 維持 86）。Level 2／1 係和弦簡化版（同一長度；其中兩個 2/4 小節各用一組和弦）。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》編曲同行為不變。</p>
+      <p>v0.02000：練習頁加咗「結他和弦」圖（可開關、可放大縮小；跟住譜視窗同 playhead 高亮而家嗰個和弦），同埋「歌詞大小」可以縮放譜下面嘅音名同自貼歌詞。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》同《Shall We Talk》嘅編曲同歌詞欄不變。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -115,6 +115,17 @@
           <input id="fa-key-scale" type="range" min="70" max="280" value="100" />
           <span id="fa-key-scale-val">100%</span>
         </label>
+        <label class="chrome-label">歌詞大小
+          <input id="fa-lyric-size" type="range" min="70" max="200" value="100" />
+          <span id="fa-lyric-size-val">100%</span>
+        </label>
+        <span class="chrome-group">
+          <label class="chrome-label"><input type="checkbox" id="fa-guitar-chords" checked />結他和弦</label>
+        </span>
+        <label class="chrome-label" id="fa-guitar-size-label">結他和弦大小
+          <input id="fa-guitar-size" type="range" min="70" max="180" value="100" />
+          <span id="fa-guitar-size-val">100%</span>
+        </label>
         <span class="chrome-group">鍵盤顯示：
           <label class="chrome-label"><input type="checkbox" id="fa-hl-melody" checked />旋律</label>
           <label class="chrome-label"><input type="checkbox" id="fa-hl-chord" checked />和弦</label>
@@ -177,6 +188,10 @@
         </div>
       </div>
 
+      <div class="fa-guitar-strip" id="fa-guitar-strip" hidden>
+        <div class="fa-guitar-scroll" id="fa-guitar-scroll" role="list" aria-label="結他和弦"></div>
+      </div>
+
       <div class="keyboard-wrap practice-keys" id="keyboard-dock-practice">
         <div id="keyboard" class="keyboard" aria-label="虛擬鋼琴"></div>
       </div>
@@ -209,6 +224,7 @@
   <script src="js/circleOfFifths.js"></script>
   <script src="js/songs/danche.js"></script>
   <script src="js/songs/shallWeTalk.js"></script>
+  <script src="js/guitarChords.js"></script>
   <script src="js/followAlong.js"></script>
   <script src="js/app.js"></script>
 </body>

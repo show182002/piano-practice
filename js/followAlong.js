@@ -68,6 +68,19 @@
   const SOLO_MELODY_STORAGE = "piano-practice-solo-melody";
   const SOLO_CHORD_STORAGE = "piano-practice-solo-chord";
   const PASTE_FOLD_MQ = "(orientation: landscape) and (max-width: 950px), (max-height: 500px) and (orientation: landscape)";
+  const GUITAR_ON_STORAGE = "piano-practice-guitar-chords";
+  const GUITAR_SIZE_STORAGE = "piano-practice-guitar-chord-size";
+  const LYRIC_SIZE_STORAGE = "piano-practice-lyric-size";
+  const LYRIC_SIZE_MIN = 0.7;
+  const LYRIC_SIZE_MAX = 2.0;
+  const LYRIC_SIZE_DEFAULT = 1;
+  const GUITAR_SIZE_MIN = 0.7;
+  const GUITAR_SIZE_MAX = 1.8;
+  const GUITAR_SIZE_DEFAULT = 1;
+  let guitarOn = true;
+  let guitarSizeScale = GUITAR_SIZE_DEFAULT;
+  let lyricSizeScale = LYRIC_SIZE_DEFAULT;
+  let guitarBuiltKey = null;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -389,6 +402,227 @@
     persistFlag(SOLO_CHORD_STORAGE, soloChord);
   }
 
+  function clampScale(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function loadSavedNumber(key, min, max, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null || raw === "") return fallback;
+      return clampScale(Number(raw), min, max, fallback);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function persistNumber(key, value) {
+    try { localStorage.setItem(key, String(value)); }
+    catch (_) { /* private mode */ }
+  }
+
+  function loadSavedGuitarAndLyric() {
+    guitarOn = loadSavedFlag(GUITAR_ON_STORAGE, true);
+    guitarSizeScale = loadSavedNumber(GUITAR_SIZE_STORAGE, GUITAR_SIZE_MIN, GUITAR_SIZE_MAX, GUITAR_SIZE_DEFAULT);
+    lyricSizeScale = loadSavedNumber(LYRIC_SIZE_STORAGE, LYRIC_SIZE_MIN, LYRIC_SIZE_MAX, LYRIC_SIZE_DEFAULT);
+  }
+
+  function lyricBand() {
+    const s = lyricSizeScale;
+    const offset = s <= 1 ? LYRIC_Y_OFFSET : LYRIC_Y_OFFSET + Math.round((s - 1) * 12);
+    const pad = s <= 1 ? BOTTOM_PAD : BOTTOM_PAD + Math.round((s - 1) * 16);
+    return { offset: offset, pad: pad, height: BASS_BOTTOM + pad };
+  }
+
+  function applyLyricSizeToStaff() {
+    const host = staffEl || document.documentElement;
+    if (host && host.style) host.style.setProperty("--fa-lyric-size-scale", String(lyricSizeScale));
+    const stage = document.querySelector(".practice-stage");
+    if (stage) stage.style.setProperty("--fa-lyric-size-scale", String(lyricSizeScale));
+  }
+
+  function syncLyricSizeSlider() {
+    const pct = Math.round(lyricSizeScale * 100);
+    const sl = $("fa-lyric-size");
+    const val = $("fa-lyric-size-val");
+    if (sl) {
+      sl.min = String(Math.round(LYRIC_SIZE_MIN * 100));
+      sl.max = String(Math.round(LYRIC_SIZE_MAX * 100));
+      if (!sl.matches(":active")) sl.value = String(pct);
+    }
+    if (val) val.textContent = pct + "%";
+  }
+
+  function setLyricSize(value, flags) {
+    flags = flags || {};
+    const next = clampScale(value, LYRIC_SIZE_MIN, LYRIC_SIZE_MAX, LYRIC_SIZE_DEFAULT);
+    const changed = Math.abs(next - lyricSizeScale) > 0.0001;
+    lyricSizeScale = next;
+    if (flags.user) persistNumber(LYRIC_SIZE_STORAGE, lyricSizeScale);
+    applyLyricSizeToStaff();
+    syncLyricSizeSlider();
+    if (changed && staffEl) {
+      builtKey = null;
+      buildStaff();
+      updateStaff();
+      updateGuitarStrip();
+    }
+  }
+
+  function syncGuitarSizeSlider() {
+    const pct = Math.round(guitarSizeScale * 100);
+    const sl = $("fa-guitar-size");
+    const val = $("fa-guitar-size-val");
+    const label = $("fa-guitar-size-label");
+    if (sl) {
+      sl.min = String(Math.round(GUITAR_SIZE_MIN * 100));
+      sl.max = String(Math.round(GUITAR_SIZE_MAX * 100));
+      if (!sl.matches(":active")) sl.value = String(pct);
+      sl.disabled = !guitarOn;
+    }
+    if (val) val.textContent = pct + "%";
+    if (label) label.classList.toggle("is-disabled", !guitarOn);
+  }
+
+  function applyGuitarSize() {
+    const strip = $("fa-guitar-strip");
+    if (strip) strip.style.setProperty("--fa-gtr-scale", String(guitarSizeScale));
+  }
+
+  function setGuitarSize(value, flags) {
+    flags = flags || {};
+    const next = clampScale(value, GUITAR_SIZE_MIN, GUITAR_SIZE_MAX, GUITAR_SIZE_DEFAULT);
+    guitarSizeScale = next;
+    if (flags.user) persistNumber(GUITAR_SIZE_STORAGE, guitarSizeScale);
+    applyGuitarSize();
+    syncGuitarSizeSlider();
+  }
+
+  function setGuitarOn(on, flags) {
+    flags = flags || {};
+    guitarOn = !!on;
+    if (flags.user) persistFlag(GUITAR_ON_STORAGE, guitarOn);
+    const cb = $("fa-guitar-chords");
+    if (cb) cb.checked = guitarOn;
+    syncGuitarSizeSlider();
+    updateGuitarStrip({ force: true });
+  }
+
+  function visibleBeatWindow(beat) {
+    const sx = scrollXFor(beat);
+    const start = sx / Math.max(0.0001, pxPerBeat);
+    const end = start + notationWidth / Math.max(0.0001, pxPerBeat);
+    return { start: start, end: end };
+  }
+
+  function guitarEventsInWindow(start, end) {
+    const out = [];
+    let t = 0;
+    const eps = 0.001;
+    progression().forEach((ev) => {
+      const evStart = t;
+      const evEnd = t + ev.beats;
+      if (ev.chord && evEnd > start + eps && evStart < end - eps) {
+        out.push({ start: evStart, end: evEnd, chord: ev.chord });
+      }
+      t += ev.beats;
+    });
+    return out;
+  }
+
+  function guitarStripKey(events) {
+    return (song && song.id ? song.id : "") + ":" + levelId + ":" + events.map((e) => e.start + ":" + e.chord).join("|");
+  }
+
+  function updateGuitarStrip(opts) {
+    opts = opts || {};
+    const strip = $("fa-guitar-strip");
+    const scroll = $("fa-guitar-scroll");
+    if (!strip || !scroll) return;
+    if (!guitarOn) {
+      strip.hidden = true;
+      guitarBuiltKey = null;
+      scroll.innerHTML = "";
+      return;
+    }
+    strip.hidden = false;
+    applyGuitarSize();
+    if (!song) {
+      scroll.innerHTML = "";
+      guitarBuiltKey = null;
+      return;
+    }
+    const beat = currentBeatFloat();
+    const win = visibleBeatWindow(beat);
+    const events = guitarEventsInWindow(win.start, win.end);
+    const key = guitarStripKey(events);
+    if (opts.force || key !== guitarBuiltKey) {
+      guitarBuiltKey = key;
+      scroll.innerHTML = "";
+      if (global.GuitarChords && GuitarChords.renderCard) {
+        events.forEach((ev) => {
+          scroll.appendChild(GuitarChords.renderCard(ev.chord, { start: ev.start, end: ev.end }));
+        });
+      }
+    }
+    syncGuitarHighlight(beat);
+  }
+
+  function syncGuitarHighlight(beat) {
+    const scroll = $("fa-guitar-scroll");
+    if (!scroll || !guitarOn) return;
+    let currentEl = null;
+    scroll.querySelectorAll(".fa-gtr-card").forEach((card) => {
+      const s = Number(card.dataset.start);
+      const e = Number(card.dataset.end);
+      const on = s <= beat && beat < e;
+      card.classList.toggle("current", on);
+      if (on) currentEl = card;
+    });
+    if (currentEl && currentEl !== syncGuitarHighlight._cur) {
+      syncGuitarHighlight._cur = currentEl;
+      const left = currentEl.offsetLeft - (scroll.clientWidth - currentEl.offsetWidth) / 2;
+      try {
+        scroll.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+      } catch (_) {
+        scroll.scrollLeft = Math.max(0, left);
+      }
+    } else if (!currentEl) {
+      syncGuitarHighlight._cur = null;
+    }
+  }
+
+  function bindGuitarAndLyricControls() {
+    const lyricSl = $("fa-lyric-size");
+    if (lyricSl && !lyricSl.dataset.bound) {
+      lyricSl.dataset.bound = "1";
+      lyricSl.addEventListener("input", () => {
+        setLyricSize(Number(lyricSl.value) / 100, { user: true });
+      });
+    }
+    const gtrCb = $("fa-guitar-chords");
+    if (gtrCb && !gtrCb.dataset.bound) {
+      gtrCb.dataset.bound = "1";
+      gtrCb.addEventListener("change", () => {
+        setGuitarOn(gtrCb.checked, { user: true });
+      });
+    }
+    const gtrSl = $("fa-guitar-size");
+    if (gtrSl && !gtrSl.dataset.bound) {
+      gtrSl.dataset.bound = "1";
+      gtrSl.addEventListener("input", () => {
+        setGuitarSize(Number(gtrSl.value) / 100, { user: true });
+      });
+    }
+    applyLyricSizeToStaff();
+    applyGuitarSize();
+    syncLyricSizeSlider();
+    syncGuitarSizeSlider();
+    if (gtrCb) gtrCb.checked = guitarOn;
+  }
+
   function melodyGuideAudible() {
     if (soloMelody || soloChord) return soloMelody;
     return !muteMelody;
@@ -702,7 +936,7 @@
 
   function staffCacheKey() {
     const width = viewWidth();
-    return (song && song.id ? song.id : "") + ":" + levelId + ":" + visibleBars + ":" + Math.round(width);
+    return (song && song.id ? song.id : "") + ":" + levelId + ":" + visibleBars + ":" + Math.round(width) + ":" + Math.round(lyricSizeScale * 100);
   }
 
   function buildStaff() {
@@ -712,11 +946,12 @@
     pxPerBeat = notationWidth / (visibleBars * beatsPerBar());
     staffEl.innerHTML = "";
 
+    const staffH = lyricBand().height;
     svg = svgEl("svg", {
       class: "fa-staff-svg",
-      viewBox: "0 0 " + width + " " + SVG_H,
+      viewBox: "0 0 " + width + " " + staffH,
       width: "100%",
-      height: String(SVG_H),
+      height: String(staffH),
       preserveAspectRatio: "xMinYMid meet",
       "aria-hidden": "false"
     });
@@ -727,7 +962,7 @@
       x: String(GUTTER),
       y: "0",
       width: String(Math.max(1, width - GUTTER)),
-      height: String(SVG_H)
+      height: String(staffH)
     }));
     svg.appendChild(defs);
 
@@ -756,7 +991,7 @@
       x1: GUTTER,
       y1: TREBLE_TOP - 16,
       x2: GUTTER,
-      y2: BASS_BOTTOM + LYRIC_Y_OFFSET + 4
+      y2: BASS_BOTTOM + lyricBand().offset + 4
     });
     svg.appendChild(playheadEl);
 
@@ -771,7 +1006,7 @@
       x: 0,
       y: 0,
       width: GUTTER,
-      height: SVG_H
+      height: lyricBand().height
     });
     svg.appendChild(bg);
 
@@ -1061,7 +1296,7 @@
   function drawLyricsUnderStaff() {
     if (!scrollG) return;
     scrollG.querySelectorAll(".fa-under-lyric").forEach((node) => node.remove());
-    const y = BASS_BOTTOM + LYRIC_Y_OFFSET;
+    const y = BASS_BOTTOM + lyricBand().offset;
     const total = totalBeats();
     let i = 0;
     while (i < total) {
@@ -1113,6 +1348,7 @@
       node.classList.toggle("hit-window", s <= hitHi && s >= hitLo);
       node.classList.toggle("passed", e <= beat);
     });
+    updateGuitarStrip();
   }
 
   function cancelGuideAudio() {
@@ -1467,6 +1703,7 @@
     bindTimeline();
     bindPracticeKeys();
     bindLyricPaste();
+    bindGuitarAndLyricControls();
     syncHighlightToggles();
     if (!bind._resizeBound) {
       bind._resizeBound = true;
@@ -1910,8 +2147,10 @@
     fillLevelSelect();
     syncBpmControls();
     loadSavedLyrics();
+    guitarBuiltKey = null;
     if (staffEl) buildStaff();
     placeLyricPasteRow();
+    updateGuitarStrip({ force: true });
     if (active) highlightCurrent();
     else if (global.PianoUI && PianoUI.setHighlights) {
       PianoUI.setHighlights({ chordMidis: [], melodyMidi: null, clearChords: true });
@@ -1926,12 +2165,15 @@
     bpm = clampBpm(song.defaultBpm || 68);
     metronomeOn = loadSavedMetronome();
     loadSavedMuteSolo();
+    loadSavedGuitarAndLyric();
     visibleBars = DEFAULT_BARS;
     resetPlayhead();
+    applyLyricSizeToStaff();
     bind();
     loadSavedLyrics();
     buildStaff();
     placeLyricPasteRow();
+    updateGuitarStrip({ force: true });
     render();
   }
 

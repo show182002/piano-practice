@@ -635,18 +635,21 @@ body[data-view="practice"] {
   min-height: 1.15em;
   opacity: 0.7;
 }
+.fa-staff, .practice-stage {
+  --fa-lyric-size-scale: 1;
+}
 .fa-under-lyric {
   fill: #c5cde0;
-  font-size: 10px;
+  font-size: calc(10px * var(--fa-lyric-size-scale, 1));
   font-weight: 600;
   font-family: inherit;
 }
 .fa-under-lyric.pitch {
-  font-size: 8px;
+  font-size: calc(8px * var(--fa-lyric-size-scale, 1));
   letter-spacing: -0.03em;
 }
 .fa-under-lyric.lyric-ch {
-  font-size: 11px;
+  font-size: calc(11px * var(--fa-lyric-size-scale, 1));
   font-weight: 700;
 }
 .fa-under-lyric.empty { fill: #6a7388; letter-spacing: 0.12em; }
@@ -709,6 +712,69 @@ body[data-view="practice"] {
 .practice-more .fa-lyric-paste {
   min-width: 160px;
 }
+
+.fa-guitar-strip {
+  flex: 0 0 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--frozen-bg);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px 4px;
+  --fa-gtr-scale: 1;
+}
+.fa-guitar-strip[hidden] { display: none !important; padding: 0; border: 0; }
+.fa-guitar-scroll {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: calc(8px * var(--fa-gtr-scale, 1));
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 4px 10px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.fa-gtr-card {
+  flex: 0 0 auto;
+  width: calc(86px * var(--fa-gtr-scale, 1));
+  background: #f6f3ec;
+  color: #1a1a1a;
+  border-radius: 10px;
+  padding: calc(5px * var(--fa-gtr-scale, 1)) calc(6px * var(--fa-gtr-scale, 1)) calc(4px * var(--fa-gtr-scale, 1));
+  border: 2px solid transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  text-align: center;
+  transform-origin: center bottom;
+  transition: border-color 0.12s linear, transform 0.12s linear, background 0.12s linear, box-shadow 0.12s linear;
+}
+.fa-gtr-card.current {
+  border-color: #c9a227;
+  background: #fff4c8;
+  transform: scale(1.07);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ffe08a 60%, transparent), 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 1;
+}
+.fa-gtr-card svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.fa-gtr-name {
+  font-size: calc(12px * var(--fa-gtr-scale, 1));
+  font-weight: 800;
+  margin-top: calc(2px * var(--fa-gtr-scale, 1));
+  line-height: 1.2;
+  color: #1c1c1c;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fa-gtr-card.current .fa-gtr-name { color: #4a3800; }
+.fa-gtr-card.is-placeholder {
+  background: #ece9e2;
+}
+.fa-gtr-card.is-placeholder .fa-gtr-name { color: #444; }
+.chrome-label.is-disabled { opacity: 0.45; }
 
 .reverb-label { gap: 4px; }
 .reverb-end {
@@ -960,6 +1026,8 @@ body[data-view="practice"] {
   .fa-lyrics { padding: 1px 8px 2px; min-height: 1.5em; }
   .fa-lyric-current { font-size: 1rem; }
   .keyboard-wrap.practice-keys { padding: 2px 6px 6px; }
+  .fa-guitar-strip { padding: 3px 6px 2px; }
+  .fa-guitar-scroll { padding: 6px 2px 8px; }
   .fa-transport { padding: 2px 10px 0; }
   .fa-status { display: none; }
 }
