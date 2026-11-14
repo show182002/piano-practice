@@ -40,6 +40,17 @@ body[data-view="game"] {
   background: #0b0d12;
 }
 
+
+/* hidden must win over view display:flex, otherwise practice/game stack on one screen */
+.view[hidden],
+.view-home[hidden],
+.view-practice[hidden],
+.view-game[hidden],
+.view-cof[hidden] {
+  display: none !important;
+}
+
+
 .top, .panel, .foot, .song-grid, .home-tools {
   max-width: 1100px;
   margin: 0 auto;
@@ -1049,11 +1060,11 @@ body[data-view="game"] {
 }
 
 
-/* ===== Game view: falling notes above the MiniLab keyboard ===== */
+/* ===== Game view: full-screen piano roll + keyboard, slim bar only ===== */
 body[data-view="game"] {
   overflow: hidden;
   height: 100%;
-  background: #0b0d12;
+  background: #07090e;
 }
 .view-game {
   display: flex;
@@ -1061,19 +1072,49 @@ body[data-view="game"] {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: #0b0d12;
+  background: #07090e;
 }
+.view-game[hidden] { display: none !important; }
 .game-stage {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--frozen-bg);
+  background: #07090e;
   position: relative;
 }
-.game-chrome {
+
+/* Slim top bar only — no staff / lyrics / guitar / timeline furniture */
+.view-game .game-chrome {
+  flex: 0 0 auto;
   flex-wrap: nowrap;
+  gap: 6px 8px;
+  padding: 4px 8px;
+  background: #10141d;
+  border-bottom: 1px solid #222838;
+  overflow: hidden;
 }
+.view-game .btn-more {
+  display: inline-flex;
+  margin-left: auto;
+}
+.view-game .game-more { display: none; }
+.view-game .game-more.open {
+  display: flex;
+  position: absolute;
+  top: 52px;
+  left: 8px;
+  right: 8px;
+  z-index: 30;
+  background: #161b28;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  max-height: 46vh;
+  overflow: auto;
+}
+
 .gm-tracks {
   display: inline-flex;
   align-items: center;
@@ -1108,18 +1149,18 @@ body[data-view="game"] {
 }
 .btn-gm-toggle:hover { border-color: var(--accent); }
 .btn-gm-toggle.is-track.is-on {
-  background: #ffd36a;
-  color: #3a2a00;
+  background: #3ee87a;
+  color: #06210f;
   border-color: transparent;
 }
 .btn-gm-toggle.is-track.is-chord.is-on {
-  background: #3d8adf;
-  color: #eaf6ff;
+  background: #3d9bff;
+  color: #041018;
   border-color: transparent;
 }
 .btn-gm-toggle.is-sound.is-on {
-  background: #3dcc6e;
-  color: #06210f;
+  background: #c8d0dc;
+  color: #12161f;
   border-color: transparent;
 }
 .gm-wait-label {
@@ -1136,69 +1177,45 @@ body[data-view="game"] {
 }
 .gm-bpm-label input[type="range"] { width: 88px; }
 
-.gm-hud {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
-  padding: 4px 12px 2px;
-  flex: 0 0 auto;
-  min-height: 1.6em;
-}
-.gm-title {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-.gm-pos {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.gm-score-wrap {
-  color: var(--hit);
+.view-game .gm-score-wrap {
+  color: #f2f4f8;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  margin-left: 4px;
 }
-.gm-combo {
-  color: #7dffa3;
+.view-game .gm-combo {
+  color: #3ee87a;
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
-.gm-feedback {
-  color: #ffe08a;
-  font-weight: 800;
-  font-size: 1rem;
-  min-height: 1em;
-  opacity: 0;
-  transition: opacity 0.12s linear;
-}
-.gm-feedback.is-on { opacity: 1; }
 
-.gm-transport { padding: 2px 12px 2px; }
-#gm-timeline-track { cursor: default; }
-
-.game-board-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
 .game-board {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  overflow-x: auto;
-  overflow-y: hidden;
+  width: 100%;
+  overflow: hidden;
+  background: #07090e;
+}
+.game-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
 }
 .game-lanes-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  width: 510px;
+  width: 100%;
   position: relative;
-  background: #0c1018;
+  background: #080b12;
 }
 .game-lanes {
   display: block;
@@ -1206,47 +1223,103 @@ body[data-view="game"] {
   height: 100%;
   touch-action: none;
 }
+.game-hit-line {
+  flex: 0 0 3px;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(to bottom, #ffffff 0 1px, #ff2a4a 1px 3px);
+  box-shadow: 0 0 8px rgba(255, 42, 74, 0.55);
+  z-index: 3;
+  pointer-events: none;
+}
 .keyboard-wrap.game-keys {
   max-width: none;
-  width: auto;
+  width: 100%;
   margin: 0;
-  padding: 4px 0 8px;
-  background: var(--frozen-bg);
+  padding: 0;
+  background: #07090e;
   flex: 0 0 auto;
-  border-top: 1px solid var(--border);
+  border: 0;
   justify-content: center;
 }
 
-.game-stage.is-waiting .gm-feedback,
-.game-stage.is-waiting #gm-status {
-  color: #ffe08a;
+.gm-feedback {
+  position: absolute;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  color: #fff6c0;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s linear;
+  z-index: 4;
+  white-space: nowrap;
+}
+.gm-feedback.is-on { opacity: 1; }
+.gm-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  margin: 0;
+  text-align: center;
+  color: #d5dbe6;
+  font-size: 0.85rem;
+  font-weight: 650;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* In game mode, highlight keys in the same color as the falling bars. */
+body[data-view="game"] .key.white.melody,
+body[data-view="game"] .key.white.melody.chord,
+body[data-view="game"] .key.white.melody.active,
+body[data-view="game"] .key.white.melody:active,
+body[data-view="game"] .key.white.melody.chord.active,
+body[data-view="game"] .key.white.melody.chord:active {
+  background: linear-gradient(#8cffb0, #1ed760);
+  box-shadow: inset 0 -6px 0 #0d8a3a, 0 0 0 2px color-mix(in srgb, #3ee87a 55%, transparent);
+  color: #06210f;
+}
+body[data-view="game"] .key.black.melody,
+body[data-view="game"] .key.black.melody.chord,
+body[data-view="game"] .key.black.melody.active,
+body[data-view="game"] .key.black.melody:active {
+  background: linear-gradient(#4cff8c, #128a40);
+  box-shadow: inset 0 -5px 0 #9dffc0, 0 0 0 2px color-mix(in srgb, #3ee87a 55%, transparent);
+  color: #06210f;
+}
+body[data-view="game"] .key.white.chord,
+body[data-view="game"] .key.white.chord.active,
+body[data-view="game"] .key.white.chord:active {
+  background: linear-gradient(#8ec8ff, #1a7aef);
+  box-shadow: inset 0 -7px 0 #0a4cad;
+  color: #041018;
+}
+body[data-view="game"] .key.black.chord,
+body[data-view="game"] .key.black.chord.active,
+body[data-view="game"] .key.black.chord:active {
+  background: linear-gradient(#4aa0ff, #0d4fa8);
+  box-shadow: inset 0 -6px 0 #9ccfff;
+  color: #eaf6ff;
+}
+body[data-view="game"] .key.white.melody .label,
+body[data-view="game"] .key.white.chord .label {
+  opacity: 1;
+  font-weight: 700;
 }
 
 @media (orientation: landscape) and (max-width: 950px), (max-height: 500px) and (orientation: landscape) {
-  .game-chrome { gap: 6px; }
-  .gm-hud { padding: 2px 10px 0; }
-  .gm-title { font-size: 0.85rem; }
-  .gm-transport { padding: 1px 10px 0; }
-  .keyboard-wrap.game-keys { padding: 2px 0 6px; }
+  .view-game .game-chrome { padding: 3px 6px; gap: 4px 6px; }
   .gm-bpm-label input[type="range"] { width: 72px; }
-  .game-more { display: none; }
-  .game-more.open {
-    display: flex;
-    position: absolute;
-    top: 58px;
-    left: 8px;
-    right: 8px;
-    z-index: 30;
-    background: #161b28;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    max-height: 46vh;
-    overflow: auto;
-  }
+  .keyboard-wrap.game-keys { padding: 0; }
+  .gm-feedback { font-size: 1.25rem; top: 14%; }
 }
-
 @media (max-width: 720px) {
   .gm-wait-label { font-size: 0.75rem; }
   .btn-gm-toggle { height: 30px; font-size: 0.75rem; padding: 0 8px; }

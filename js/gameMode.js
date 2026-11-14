@@ -9,7 +9,7 @@
   const HIT_EARLY = 0.32;
   const HIT_LATE = 0.40;
   const PERFECT_BEATS = 0.12;
-  const MIN_BAR_PX = 10;
+  const MIN_BAR_PX = 18;
   const VOICE_OPTS = { minMidi: 48, maxMidi: 67 };
   const STORAGE = {
     showMelody: "piano-practice-game-show-melody",
@@ -21,11 +21,12 @@
   };
 
   const COLOR = {
-    melody: { fill: "#ffd36a", stroke: "#ffe9a8", text: "#3a2a00", glow: "rgba(255, 211, 106, 0.45)" },
-    melodyWrap: { fill: "#c48a14", stroke: "#e0b03a", text: "#fff6d6", glow: "rgba(196, 138, 20, 0.45)" },
-    chord: { fill: "#3d8adf", stroke: "#7ad0ff", text: "#eaf6ff", glow: "rgba(61, 138, 223, 0.4)" },
-    chordWrap: { fill: "#0f4fad", stroke: "#3d8adf", text: "#d6e8ff", glow: "rgba(15, 79, 173, 0.45)" },
-    hit: { fill: "#8dffb4", stroke: "#d8ffe6", text: "#06210f" },
+    melody: { fill: "#3ee87a", stroke: "#b7ffd0", text: "#06210f", glow: "rgba(62, 232, 122, 0.45)" },
+    melodyWrap: { fill: "#1b8a46", stroke: "#3ee87a", text: "#e8ffe9", glow: "rgba(27, 138, 70, 0.45)" },
+    melodyHit: { fill: "#9dffc0", stroke: "#e9fff1", text: "#06210f", glow: "rgba(157, 255, 192, 0.55)" },
+    chord: { fill: "#3d9bff", stroke: "#b3d9ff", text: "#041018", glow: "rgba(61, 155, 255, 0.4)" },
+    chordWrap: { fill: "#0d4fa8", stroke: "#3d9bff", text: "#e8f3ff", glow: "rgba(13, 79, 168, 0.45)" },
+    chordHit: { fill: "#9ccfff", stroke: "#e7f3ff", text: "#041018", glow: "rgba(156, 207, 255, 0.55)" },
     miss: { fill: "#5a6170", stroke: "#8a91a0", text: "#d0d4dc" }
   };
 
@@ -57,6 +58,7 @@
   let unsubRebuild = null;
   let moreOpen = false;
   let lastLayoutKey = "";
+  let savedScale = null;
   let canvasCssW = 0;
   let canvasCssH = 0;
 
@@ -211,6 +213,17 @@
     if (wrap > 0) return "oct+";
     if (wrap < 0) return "oct−";
     return "";
+  }
+
+  /* Letter only (C, F♯, E♭) — no octave number — drawn on the falling bar. */
+  function pitchLetter(n) {
+    let raw = n && n.name ? String(n.name) : "";
+    if (!raw && n && n.midi != null && global.MusicTheory && MusicTheory.midiToName) {
+      raw = MusicTheory.midiToName(n.midi);
+    }
+    raw = raw.replace(/[0-9]/g, "");
+    if (global.MusicTheory && MusicTheory.prettyNote) raw = MusicTheory.prettyNote(raw);
+    return raw;
   }
 
   function noteVisible(n) {
@@ -452,8 +465,8 @@
     const chords = [];
     notes.forEach((n) => {
       if (!noteVisible(n) || n.status === "miss") return;
-      if (n.status === "hit" && beat > n.start + n.dur) return;
-      if (beat < n.start - 0.35 || beat > n.start + Math.max(0.2, n.dur)) return;
+      const end = n.start + Math.max(0.18, n.dur);
+      if (beat < n.start - 0.08 || beat > end) return;
       if (n.track === "melody") mel = n.midi;
       else chords.push(n.midi);
     });
@@ -507,8 +520,6 @@
       else if (state === "paused") statusEl.textContent = "已暫停";
       else statusEl.textContent = "";
     }
-    const title = $("gm-title");
-    if (title && song) title.textContent = (song.title || "") + " · 遊戲";
   }
 
   function syncTransport() {
@@ -574,20 +585,26 @@
   }
 
   function colorFor(n, wrap) {
-    if (n.status === "hit") return COLOR.hit;
     if (n.status === "miss") return COLOR.miss;
-    if (n.track === "melody") return wrap ? COLOR.melodyWrap : COLOR.melody;
+    const isMel = n.track === "melody";
+    if (n.status === "hit") return isMel ? COLOR.melodyHit : COLOR.chordHit;
+    if (isMel) return wrap ? COLOR.melodyWrap : COLOR.melody;
     return wrap ? COLOR.chordWrap : COLOR.chord;
   }
 
   function syncCanvasSize() {
     const canvas = $("gm-lanes");
     const wrap = document.getElementById("gm-lanes-wrap");
+    const stack = document.getElementById("gm-stack");
+    const line = document.getElementById("gm-hit-line");
     const kbd = global.PianoUI && PianoUI.getKeyboardEl ? PianoUI.getKeyboardEl() : null;
     if (!canvas || !wrap) return false;
     const kbdW = kbd ? kbd.offsetWidth : 0;
-    if (kbdW && Math.abs(wrap.offsetWidth - kbdW) > 0.5) {
-      wrap.style.width = kbdW + "px";
+    if (kbdW) {
+      if (stack && Math.abs((parseFloat(stack.style.width) || 0) - kbdW) > 0.5) {
+        stack.style.width = kbdW + "px";
+      }
+      if (line) line.style.width = kbdW + "px";
     }
     const cssW = wrap.clientWidth;
     const cssH = wrap.clientHeight;
@@ -617,21 +634,24 @@
     const h = geo.cssH;
     ctx.clearRect(0, 0, w, h);
 
-    const hitY = h - 10;
-    const topY = 8;
+    const hitY = Math.max(8, h - 2);
+    const topY = 6;
     const travelPx = Math.max(80, hitY - topY);
     const pxPerBeat = travelPx / TRAVEL_BEATS;
     const beat = currentBeatFloat();
+    const pickup = pickupBeats();
+    const bpb = beatsPerBar();
 
-    ctx.fillStyle = "#0c1018";
+    ctx.fillStyle = "#080b12";
     ctx.fillRect(0, 0, w, h);
 
     const keys = [...geo.map.values()].sort((a, b) => a.x - b.x);
     keys.forEach((k) => {
       if (k.black) return;
-      ctx.fillStyle = "#141926";
+      ctx.fillStyle = "#0c1018";
       ctx.fillRect(k.x, 0, k.w, h);
-      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(Math.round(k.x) + 0.5, 0);
       ctx.lineTo(Math.round(k.x) + 0.5, h);
@@ -639,21 +659,29 @@
     });
     keys.forEach((k) => {
       if (!k.black) return;
-      ctx.fillStyle = "#0a0d14";
+      ctx.fillStyle = "#07090e";
       ctx.fillRect(k.x, 0, k.w, h);
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.beginPath();
+      ctx.moveTo(Math.round(k.x) + 0.5, 0);
+      ctx.lineTo(Math.round(k.x) + 0.5, h);
+      ctx.stroke();
     });
 
-    ctx.strokeStyle = "rgba(255, 77, 109, 0.9)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, hitY);
-    ctx.lineTo(w, hitY);
-    ctx.stroke();
-    const grd = ctx.createLinearGradient(0, hitY - 16, 0, hitY);
-    grd.addColorStop(0, "rgba(255, 77, 109, 0)");
-    grd.addColorStop(1, "rgba(255, 77, 109, 0.22)");
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, hitY - 16, w, 16);
+    const firstBeat = Math.floor(beat - TRAVEL_BEATS - 1);
+    const lastBeat = Math.ceil(beat + 1);
+    for (let b = firstBeat; b <= lastBeat; b++) {
+      const y = hitY - (b - beat) * pxPerBeat;
+      if (y < -2 || y > h + 2) continue;
+      const afterPickup = b - pickup;
+      const isBar = b >= pickup && afterPickup % bpb === 0;
+      ctx.strokeStyle = isBar ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.06)";
+      ctx.lineWidth = isBar ? 1.4 : 1;
+      ctx.beginPath();
+      ctx.moveTo(0, Math.round(y) + 0.5);
+      ctx.lineTo(w, Math.round(y) + 0.5);
+      ctx.stroke();
+    }
 
     const visible = notes.filter((n) => {
       if (!noteVisible(n)) return false;
@@ -678,34 +706,48 @@
       }
       let height = Math.max(MIN_BAR_PX, yAttack - yRelease);
       const y = yAttack - height;
-      const inset = col.black ? 1 : 3;
+      const inset = col.black ? 1 : 2.5;
       const x = col.x + inset;
-      const bw = Math.max(6, col.w - inset * 2);
+      const bw = Math.max(8, col.w - inset * 2);
       const pal = colorFor(n, wr.wrap);
-      const r = Math.min(6, bw / 2, height / 2);
+      const r = Math.min(5, bw / 2, height / 2);
       ctx.save();
       if (n.status === "pending" && Math.abs(beat - n.start) <= HIT_LATE) {
         ctx.shadowColor = pal.glow || pal.stroke;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 14;
       }
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y, bw, height, r);
       else ctx.rect(x, y, bw, height);
       ctx.fillStyle = pal.fill;
-      ctx.globalAlpha = n.status === "miss" ? 0.45 : (n.status === "hit" ? 0.85 : 1);
+      ctx.globalAlpha = n.status === "miss" ? 0.4 : 1;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.3;
       ctx.strokeStyle = pal.stroke;
       ctx.stroke();
       ctx.shadowBlur = 0;
-      const label = wrapLabel(wr.wrap);
-      if (label && height >= 16 && n.status === "pending") {
+
+      const letter = pitchLetter(n);
+      const mark = wrapLabel(wr.wrap);
+      if (letter && height >= 14 && n.status !== "miss") {
+        const fontPx = Math.max(11, Math.min(18, Math.floor(bw * 0.72)));
         ctx.fillStyle = pal.text;
-        ctx.font = "600 9px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
+        ctx.font = "800 " + fontPx + "px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(label, x + bw / 2, yAttack - 3);
+        const letterY = yAttack - (mark && height >= 28 ? 13 : 3);
+        ctx.fillText(letter, x + bw / 2, letterY);
+        if (mark && height >= 28) {
+          ctx.font = "700 9px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
+          ctx.fillText(mark, x + bw / 2, yAttack - 3);
+        }
+      } else if (mark && height >= 16 && n.status === "pending") {
+        ctx.fillStyle = pal.text;
+        ctx.font = "700 9px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(mark, x + bw / 2, yAttack - 3);
       }
       ctx.restore();
     }
@@ -989,6 +1031,7 @@
       window.addEventListener("keydown", onGameKeydown);
       window.addEventListener("resize", () => {
         if (!active) return;
+        applyGameKeyboardScale();
         syncCanvasSize();
         drawLanes();
       });
@@ -1031,9 +1074,25 @@
     }
   }
 
+  function applyGameKeyboardScale() {
+    if (!global.PianoUI || !PianoUI.setScale) return;
+    if (savedScale == null && typeof PianoUI.getScale === "function") {
+      savedScale = PianoUI.getScale();
+    }
+    const next = (typeof PianoUI.fillScale === "function") ? PianoUI.fillScale() : (PianoUI.fitScale ? PianoUI.fitScale() : null);
+    if (next != null) PianoUI.setScale(next, { force: true });
+  }
+
+  function restoreKeyboardScale() {
+    if (savedScale == null || !global.PianoUI || !PianoUI.setScale) return;
+    PianoUI.setScale(savedScale, { force: true });
+    savedScale = null;
+  }
+
   function activate() {
     active = true;
     bind();
+    applyGameKeyboardScale();
     if (global.PianoUI && PianoUI.setHighlightVisibility) {
       PianoUI.setHighlightVisibility({ melody: true, chord: true });
     }
@@ -1053,6 +1112,7 @@
     syncTransport();
     updateTimeline();
     requestAnimationFrame(() => {
+      applyGameKeyboardScale();
       syncCanvasSize();
       drawLanes();
     });
@@ -1067,6 +1127,7 @@
     if (unsubRebuild) { unsubRebuild(); unsubRebuild = null; }
     held.clear();
     if (global.PianoUI && PianoUI.clearHighlight) PianoUI.clearHighlight();
+    restoreKeyboardScale();
   }
 
   function mount(songData) {

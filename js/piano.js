@@ -502,6 +502,15 @@
     return clampScale(avail / base);
   }
 
+  /* Scale the 25-key board up (or down) so it fills the current dock width. */
+  function fillScale() {
+    const wrap = keyboard && keyboard.parentElement;
+    const avail = wrap && wrap.clientWidth ? Math.max(80, wrap.clientWidth - 8) : Math.max(80, window.innerWidth - 24);
+    const base = unscaledWidth();
+    if (!base) return SCALE_DEFAULT;
+    return clampScale(avail / base);
+  }
+
   function setScale(value, flags) {
     flags = flags || {};
     const next = clampScale(value);
@@ -708,6 +717,7 @@
     setScale,
     getScale: () => keyScale,
     fitScale,
+    fillScale,
     syncScaleSlider,
     subscribeNotes,
     onNoteEvent: subscribeNotes,
