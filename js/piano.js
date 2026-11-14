@@ -161,14 +161,16 @@
     const whites = whiteMidis();
     whites.forEach((midi, idx) => {
       const el = document.createElement("div");
-      el.className = "key white";
+      el.className = "key white" + ((midi % 12) === 0 ? " c-key" : "");
       el.dataset.midi = String(midi);
       el.style.flex = "0 0 " + m.WHITE_W + "px";
       el.style.width = m.WHITE_W + "px";
       el.style.minWidth = m.WHITE_W + "px";
       el.style.maxWidth = m.WHITE_W + "px";
       el.style.marginRight = (idx === whites.length - 1 ? 0 : m.WHITE_GAP) + "px";
-      el.innerHTML = `<span class="label">${labelFor(midi)}</span>`;
+      const oct = Math.floor(midi / 12) - 1;
+      const octMark = (midi % 12) === 0 ? `<span class="oct-mark" aria-hidden="true">${oct}</span>` : "";
+      el.innerHTML = `<span class="label">${labelFor(midi)}</span>${octMark}`;
       bindPointer(el, midi);
       keyboard.appendChild(el);
       keyEls.set(midi, el);

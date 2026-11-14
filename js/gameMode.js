@@ -23,10 +23,10 @@
   const COLOR = {
     melody: { fill: "#3ee87a", stroke: "#b7ffd0", text: "#06210f", glow: "rgba(62, 232, 122, 0.45)" },
     melodyWrap: { fill: "#1b8a46", stroke: "#3ee87a", text: "#e8ffe9", glow: "rgba(27, 138, 70, 0.45)" },
-    melodyHit: { fill: "#9dffc0", stroke: "#e9fff1", text: "#06210f", glow: "rgba(157, 255, 192, 0.55)" },
+    melodyHit: { fill: "#b8ffd3", stroke: "#ffffff", text: "#06210f", glow: "rgba(170, 255, 210, 0.95)" },
     chord: { fill: "#3d9bff", stroke: "#b3d9ff", text: "#041018", glow: "rgba(61, 155, 255, 0.4)" },
     chordWrap: { fill: "#0d4fa8", stroke: "#3d9bff", text: "#e8f3ff", glow: "rgba(13, 79, 168, 0.45)" },
-    chordHit: { fill: "#9ccfff", stroke: "#e7f3ff", text: "#041018", glow: "rgba(156, 207, 255, 0.55)" },
+    chordHit: { fill: "#b3dcff", stroke: "#ffffff", text: "#041018", glow: "rgba(165, 215, 255, 0.95)" },
     miss: { fill: "#5a6170", stroke: "#8a91a0", text: "#d0d4dc" }
   };
 
@@ -59,6 +59,7 @@
   let moreOpen = false;
   let lastLayoutKey = "";
   let savedScale = null;
+  let gameScaleUserSet = false;
   let canvasCssW = 0;
   let canvasCssH = 0;
 
@@ -262,11 +263,19 @@
     return m + ":" + String(s).padStart(2, "0");
   }
 
-  function cancelGuideAudio() {
+  function syncGuideBuses() {
+    if (!global.PianoAudio || typeof PianoAudio.setGuideTrackEnabled !== "function") return;
+    PianoAudio.setGuideTrackEnabled("melody", !!soundMelody);
+    PianoAudio.setGuideTrackEnabled("chord", !!soundChord);
+  }
+
+  function cancelGuideAudio(track) {
     if (global.PianoAudio && typeof PianoAudio.cancelGuide === "function") {
-      PianoAudio.cancelGuide();
+      PianoAudio.cancelGuide(track || undefined);
     }
-    notes.forEach((n) => { n.guideOn = false; });
+    notes.forEach((n) => {
+      if (!track || n.track === track) n.guideOn = false;
+    });
   }
 
   function audioTimeOfBeat(beat) {
@@ -304,7 +313,7 @@
       if (durSec <= 0.02) return;
       const vel = n.track === "melody" ? 104 : 78;
       const gain = n.track === "melody" ? 1 : 0.52;
-      PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: vel, gain: gain });
+      PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: vel, gain: gain, track: n.track });
       n.guideOn = true;
     });
   }
@@ -569,13 +578,15 @@
     const cssW = canvasCssW || (canvas ? canvas.clientWidth : 0);
     const cssH = canvasCssH || (canvas ? canvas.clientHeight : 0);
     const kbdW = layout.width || cssW;
-    const xScale = kbdW ? (cssW / kbdW) : 1;
+    // Never stretch lanes to fill a wider canvas (that is the 變肥 look).
+    // If the wrap is wider than the keyboard, center the pitch columns.
+    const xOffset = (kbdW && cssW > kbdW + 1) ? (cssW - kbdW) / 2 : 0;
     const map = new Map();
     (layout.keys || []).forEach((k) => {
       map.set(k.baseMidi, {
-        x: k.x * xScale,
-        w: k.w * xScale,
-        cx: k.cx * xScale,
+        x: k.x + xOffset,
+        w: k.w,
+        cx: k.cx + xOffset,
         black: k.black,
         baseMidi: k.baseMidi,
         soundingMidi: k.soundingMidi
@@ -705,16 +716,21 @@
         yRelease = hitY - n.dur * pxPerBeat;
       }
       let height = Math.max(MIN_BAR_PX, yAttack - yRelease);
-      const y = yAttack - height;
+      let y = yAttack - height;
+      if (yAttack > hitY) {
+        height = Math.max(2, hitY - y);
+      }
       const inset = col.black ? 1 : 2.5;
       const x = col.x + inset;
       const bw = Math.max(8, col.w - inset * 2);
       const pal = colorFor(n, wr.wrap);
       const r = Math.min(5, bw / 2, height / 2);
       ctx.save();
-      if (n.status === "pending" && Math.abs(beat - n.start) <= HIT_LATE) {
+      const atLine = n.status === "pending" && Math.abs(beat - n.start) <= HIT_LATE;
+      const heldHit = n.status === "hit";
+      if (atLine || heldHit) {
         ctx.shadowColor = pal.glow || pal.stroke;
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = heldHit ? 26 : 14;
       }
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y, bw, height, r);
@@ -723,10 +739,16 @@
       ctx.globalAlpha = n.status === "miss" ? 0.4 : 1;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = 1.3;
+      ctx.lineWidth = n.status === "hit" ? 2.2 : 1.3;
       ctx.strokeStyle = pal.stroke;
       ctx.stroke();
       ctx.shadowBlur = 0;
+      if (n.status === "hit") {
+        // A bright contact flash where the bar meets the red line.
+        const flashH = Math.min(10, height);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+        ctx.fillRect(x, hitY - flashH, bw, flashH);
+      }
 
       const letter = pitchLetter(n);
       const mark = wrapLabel(wr.wrap);
@@ -736,18 +758,18 @@
         ctx.font = "800 " + fontPx + "px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        const letterY = yAttack - (mark && height >= 28 ? 13 : 3);
-        ctx.fillText(letter, x + bw / 2, letterY);
+        const letterBase = Math.min(yAttack, hitY) - (mark && height >= 28 ? 13 : 3);
+        ctx.fillText(letter, x + bw / 2, letterBase);
         if (mark && height >= 28) {
           ctx.font = "700 9px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
-          ctx.fillText(mark, x + bw / 2, yAttack - 3);
+          ctx.fillText(mark, x + bw / 2, Math.min(yAttack, hitY) - 3);
         }
       } else if (mark && height >= 16 && n.status === "pending") {
         ctx.fillStyle = pal.text;
         ctx.font = "700 9px \"Noto Sans TC\", \"PingFang HK\", system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(mark, x + bw / 2, yAttack - 3);
+        ctx.fillText(mark, x + bw / 2, Math.min(yAttack, hitY) - 3);
       }
       ctx.restore();
     }
@@ -762,6 +784,12 @@
       const col = geo.map.get(wr.baseMidi);
       return col && col.black;
     }).forEach(drawNote);
+
+    // Bright red contact line at the bottom of the roll, pairing with the DOM strip.
+    ctx.fillStyle = "#ff1433";
+    ctx.fillRect(0, Math.max(0, hitY - 2), w, 4);
+    ctx.fillStyle = "rgba(255, 236, 238, 0.85)";
+    ctx.fillRect(0, Math.max(0, hitY - 2), w, 1.2);
   }
 
   function renderFrame() {
@@ -936,7 +964,8 @@
   function setSoundMelody(on) {
     soundMelody = !!on;
     saveFlag(STORAGE.soundMelody, soundMelody);
-    cancelGuideAudio();
+    syncGuideBuses();
+    cancelGuideAudio("melody");
     if (state === "playing" && !waiting) scheduleGuideAudio();
     syncToggles();
   }
@@ -944,7 +973,8 @@
   function setSoundChord(on) {
     soundChord = !!on;
     saveFlag(STORAGE.soundChord, soundChord);
-    cancelGuideAudio();
+    syncGuideBuses();
+    cancelGuideAudio("chord");
     if (state === "playing" && !waiting) scheduleGuideAudio();
     syncToggles();
   }
@@ -1018,6 +1048,11 @@
     bindToggle("gm-show-chord", () => showChord, setShowChord);
     bindToggle("gm-sound-melody", () => soundMelody, setSoundMelody);
     bindToggle("gm-sound-chord", () => soundChord, setSoundChord);
+    const scaleEl = $("gm-key-scale");
+    if (scaleEl && !scaleEl.dataset.gameScaleHook) {
+      scaleEl.dataset.gameScaleHook = "1";
+      scaleEl.addEventListener("input", () => { gameScaleUserSet = true; });
+    }
     if (more && panel && !more.dataset.bound) {
       more.dataset.bound = "1";
       more.addEventListener("click", () => {
@@ -1074,16 +1109,40 @@
     }
   }
 
+  /* Proportional scale for the 25-key board: shrink to fit the board width,
+     cap height so the roll still has room, and never stretch keys sideways
+     to fill the screen (the 變肥 look). A comfortable ceiling of 1.45 keeps
+     white keys taller than they are wide at typical desktop widths. */
+  function naturalGameScale() {
+    const board = document.querySelector(".game-board");
+    const availW = board && board.clientWidth ? Math.max(80, board.clientWidth - 16) : Math.max(80, window.innerWidth - 24);
+    const availH = board && board.clientHeight ? board.clientHeight : window.innerHeight;
+    const baseW = 510; /* unscaled MiniLab width (15 white keys + padding) */
+    const baseH = 126;
+    const maxByW = availW / baseW;
+    const maxH = Math.min(210, Math.max(110, availH * 0.32));
+    const maxByH = maxH / baseH;
+    const s = Math.min(maxByW, maxByH, 1.45);
+    return Math.max(0.7, s);
+  }
+
   function applyGameKeyboardScale() {
     if (!global.PianoUI || !PianoUI.setScale) return;
     if (savedScale == null && typeof PianoUI.getScale === "function") {
       savedScale = PianoUI.getScale();
     }
-    const next = (typeof PianoUI.fillScale === "function") ? PianoUI.fillScale() : (PianoUI.fitScale ? PianoUI.fitScale() : null);
-    if (next != null) PianoUI.setScale(next, { force: true });
+    const cap = naturalGameScale();
+    if (gameScaleUserSet && typeof PianoUI.getScale === "function") {
+      const cur = PianoUI.getScale();
+      if (cur > cap + 0.001) PianoUI.setScale(cap, { force: true });
+      else if (global.PianoUI.syncScaleSlider) PianoUI.syncScaleSlider();
+      return;
+    }
+    PianoUI.setScale(cap, { force: true });
   }
 
   function restoreKeyboardScale() {
+    gameScaleUserSet = false;
     if (savedScale == null || !global.PianoUI || !PianoUI.setScale) return;
     PianoUI.setScale(savedScale, { force: true });
     savedScale = null;
@@ -1092,7 +1151,9 @@
   function activate() {
     active = true;
     bind();
+    gameScaleUserSet = false;
     applyGameKeyboardScale();
+    syncGuideBuses();
     if (global.PianoUI && PianoUI.setHighlightVisibility) {
       PianoUI.setHighlightVisibility({ melody: true, chord: true });
     }

@@ -14,6 +14,8 @@
   let master = null;
   let limiter = null;
   let voiceBus = null;
+  let guideMelodyGain = null;
+  let guideChordGain = null;
   let dryGain = null;
   let wetGain = null;
   const live = new Map();
@@ -23,9 +25,10 @@
 
   /* Salamander OGGs peak about -16 to -41 dBFS (C4 ~ -19 dB / 0.11 linear).
      The old 0.55 voice peak left a typical mid note at vel 100 / vol 100 around -26 dBFS.
-     7x makeup (0.55 * 7 = 3.85) puts C4 at vel 127 / vol 100 around -7.5 dBFS.
-     A master limiter then catches loud lows and 3–4 note chords. */
-  const SAMPLE_PEAK_GAIN = 0.55 * 7;
+     11x makeup (0.55 * 11 = 6.05) is louder than the previous 7x path; a
+     typical mid note at vel 100 / vol 90 lands nearer -6 dBFS and the
+     master limiter still catches loud lows and 3–4 note chords. */
+  const SAMPLE_PEAK_GAIN = 0.55 * 11;
   const OSC_PEAK_GAIN = 0.45;
   const OSC_SUS_GAIN = 0.28;
 
@@ -122,7 +125,7 @@
 
   function setupGraph() {
     master = ctx.createGain();
-    master.gain.value = 0.7;
+    master.gain.value = 0.9;
 
     limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -6;
@@ -135,6 +138,13 @@
 
     voiceBus = ctx.createGain();
     voiceBus.gain.value = 1;
+
+    guideMelodyGain = ctx.createGain();
+    guideChordGain = ctx.createGain();
+    guideMelodyGain.gain.value = 1;
+    guideChordGain.gain.value = 1;
+    guideMelodyGain.connect(voiceBus);
+    guideChordGain.connect(voiceBus);
 
     dryGain = ctx.createGain();
     wetGain = ctx.createGain();
@@ -290,7 +300,7 @@
       });
   }
 
-  function startOscVoice(midi, t, velocity, gainScale) {
+  function startOscVoice(midi, t, velocity, gainScale, dest) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const filter = ctx.createBiquadFilter();
@@ -313,16 +323,16 @@
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(voiceBus);
+    gain.connect(dest || voiceBus);
     osc.start(t);
 
     return { kind: "osc", osc, gain, filter, peak: sus };
   }
 
-  function startSampleVoice(midi, t, velocity, gainScale) {
+  function startSampleVoice(midi, t, velocity, gainScale, dest) {
     const root = nearestRoot(midi, true);
     const buf = root != null ? buffers.get(root) : null;
-    if (!buf) return startOscVoice(midi, t, velocity, gainScale);
+    if (!buf) return startOscVoice(midi, t, velocity, gainScale, dest);
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -345,16 +355,16 @@
     gain.gain.exponentialRampToValueAtTime(0.0001, t + env.hold + env.tail);
 
     src.connect(gain);
-    gain.connect(voiceBus);
+    gain.connect(dest || voiceBus);
     src.start(t);
     try { src.stop(t + env.hold + env.tail + 0.05); } catch (_) { /* ignore */ }
 
     return { kind: "sample", src, gain, peak };
   }
 
-  function startVoice(midi, t, velocity, gainScale) {
-    if (buffers.size) return startSampleVoice(midi, t, velocity, gainScale);
-    return startOscVoice(midi, t, velocity, gainScale);
+  function startVoice(midi, t, velocity, gainScale, dest) {
+    if (buffers.size) return startSampleVoice(midi, t, velocity, gainScale, dest);
+    return startOscVoice(midi, t, velocity, gainScale, dest);
   }
 
   function stopNode(voice, when) {
@@ -421,7 +431,11 @@
     const end = start + dur;
     if (end <= t0 + 0.015) return null;
     const t = Math.max(start, t0);
-    const voice = startVoice(midi, t, opts.velocity, opts.gain);
+    const dest = opts.track === "chord" ? guideChordGain
+      : opts.track === "melody" ? guideMelodyGain
+      : voiceBus;
+    const voice = startVoice(midi, t, opts.velocity, opts.gain, dest);
+    voice.track = opts.track || null;
     const env = envelopeTimes();
     const rel = Math.max(t + 0.08, end);
     try {
@@ -438,11 +452,59 @@
     return id;
   }
 
-  function cancelGuide() {
+  /* Instantly silence a gain param. Do not seed setValueAtTime with
+     currentGain() for not-yet-started voices: a GainNode defaults to 1, and
+     canceling future automation would then leave the voice at full volume. */
+  function silenceGain(gainParam, t) {
+    if (!gainParam) return;
+    try {
+      if (typeof gainParam.cancelAndHoldAtTime === "function") {
+        try { gainParam.cancelAndHoldAtTime(t); }
+        catch (_) { gainParam.cancelScheduledValues(t); }
+      } else {
+        gainParam.cancelScheduledValues(t);
+      }
+      gainParam.setValueAtTime(0.0001, t);
+    } catch (_) { /* already gone */ }
+  }
+
+  function guideBus(track) {
+    if (track === "chord") return guideChordGain;
+    if (track === "melody") return guideMelodyGain;
+    return null;
+  }
+
+  /* Mute or unmute one guide track immediately (1 or 0). User/MIDI notes
+     ride voiceBus and are not affected. */
+  function setGuideTrackEnabled(track, on) {
+    ensure();
+    const node = guideBus(track);
+    if (!node) return;
+    const t = ctx.currentTime;
+    try {
+      node.gain.cancelScheduledValues(t);
+      node.gain.setValueAtTime(on ? 1 : 0, t);
+    } catch (_) {
+      node.gain.value = on ? 1 : 0;
+    }
+  }
+
+  /**
+   * Stop scheduled/playing guide voices. A BufferSource already has stop()
+   * reserved at creation, so a second src.stop() throws and cannot be the
+   * mute path — silence the voice gain and disconnect instead.
+   * Pass a track ("melody" | "chord") to cancel only that guide bus.
+   */
+  function cancelGuide(track) {
     if (!guide.size) return;
     const t = ctx ? ctx.currentTime : 0;
-    for (const voice of guide.values()) stopVoice(voice, true, t);
-    guide.clear();
+    for (const [id, voice] of [...guide.entries()]) {
+      if (track && voice.track && voice.track !== track) continue;
+      if (voice.gain) silenceGain(voice.gain.gain, t);
+      try { stopNode(voice, t + 0.02); } catch (_) { /* already stopped */ }
+      try { voice.gain.disconnect(); } catch (_) { /* already disconnected */ }
+      guide.delete(id);
+    }
   }
 
   /** Metronome click. `time` is AudioContext time; accent = downbeat. */
@@ -496,6 +558,7 @@
     cancelClicks,
     scheduleGuide,
     cancelGuide,
+    setGuideTrackEnabled,
     loadSamples: startSampleLoad,
     onStatus,
     getStatus,

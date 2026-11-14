@@ -1376,8 +1376,15 @@
     return out;
   }
 
+  function syncGuideBuses() {
+    if (!global.PianoAudio || typeof PianoAudio.setGuideTrackEnabled !== "function") return;
+    PianoAudio.setGuideTrackEnabled("melody", melodyGuideAudible());
+    PianoAudio.setGuideTrackEnabled("chord", chordGuideAudible());
+  }
+
   function scheduleGuideAudio() {
     cancelGuideAudio();
+    syncGuideBuses();
     if (state !== "playing") return;
     if (!melodyGuideAudible() && !chordGuideAudible()) return;
     if (!global.PianoAudio || typeof PianoAudio.scheduleGuide !== "function") return;
@@ -1392,7 +1399,7 @@
         const start = Math.max(n.start, fromBeat);
         const durSec = (end - start) * spb;
         if (durSec <= 0.02) return;
-        PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 104, gain: 1 });
+        PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 104, gain: 1, track: "melody" });
       });
     }
 
@@ -1404,7 +1411,7 @@
           const start = Math.max(n.start, fromBeat);
           const durSec = (end - start) * spb;
           if (durSec <= 0.02) return;
-          PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 78, gain: 0.52 });
+          PianoAudio.scheduleGuide(n.midi, audioTimeOfBeat(start), durSec, { velocity: 78, gain: 0.52, track: "chord" });
         });
       } else {
         chordEvents().forEach((ev) => {
@@ -1417,7 +1424,7 @@
           const voicing = MusicTheory.chordVoicingFromSymbol(ev.chord, VOICE_OPTS) || [];
           const t = audioTimeOfBeat(start);
           voicing.forEach((v) => {
-            PianoAudio.scheduleGuide(v.midi, t, durSec, { velocity: 78, gain: 0.52 });
+            PianoAudio.scheduleGuide(v.midi, t, durSec, { velocity: 78, gain: 0.52, track: "chord" });
           });
         });
       }
@@ -1633,6 +1640,7 @@
       setter(!getter());
       persistMuteSolo();
       syncMsButtons();
+      syncGuideBuses();
       if (state === "playing") scheduleGuideAudio();
     });
   }
