@@ -11,7 +11,7 @@
   const PERFECT_BEATS = 0.12;
   const MIN_BAR_PX = 18;
   const LIT_EARLY = TRAVEL_BEATS;
-  const RAIL_MIN_PX = 148;
+  const RAIL_MIN_PX = 252;
   const VOICE_OPTS = { minMidi: 48, maxMidi: 67 };
   const FALLBACK_CHORDS = ["G", "D/F#", "Em", "Bm/D", "C", "G/B", "Am7", "C/D", "D", "G/F", "C/E", "Cm6/Eb", "G/D", "A/C#"];
   const STORAGE = {
@@ -358,7 +358,9 @@
 
   function matchesPress(n, midi) {
     const w = wrapToWindow(n.midi);
-    return midi === w.displaySounding || midi === w.baseMidi || midi === n.midi;
+    if (midi === w.displaySounding || midi === w.baseMidi || midi === n.midi) return true;
+    const heldWrap = wrapToWindow(midi);
+    return heldWrap.baseMidi === w.baseMidi || heldWrap.displaySounding === w.displaySounding;
   }
 
   function uniqueChordSymbols() {
@@ -374,7 +376,53 @@
   }
 
   function prettyChordSymbol(sym) {
+    if (global.MusicTheory && MusicTheory.prettyChord) return MusicTheory.prettyChord(sym);
     return String(sym || "").replace(/#/g, "♯").replace(/([A-G])b/g, "$1♭");
+  }
+
+  function isBlackMidi(midi) {
+    const n = ((midi % 12) + 12) % 12;
+    return n === 1 || n === 3 || n === 6 || n === 8 || n === 10;
+  }
+
+  function miniKeyboardMarkup(midis) {
+    const lit = new Set(midis || []);
+    const start = 48;
+    const end = 72;
+    const whites = [];
+    for (let m = start; m <= end; m++) {
+      if (!isBlackMidi(m)) whites.push(m);
+    }
+    const ww = 7;
+    const gap = 1;
+    const wh = 22;
+    const bw = 4.4;
+    const bh = 13;
+    const padX = 1.2;
+    const padY = 1;
+    const width = +(padX * 2 + whites.length * ww + Math.max(0, whites.length - 1) * gap).toFixed(2);
+    const height = +(padY * 2 + wh).toFixed(2);
+    const parts = [];
+    parts.push('<svg class="gm-mini-kbd" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '" aria-hidden="true" focusable="false">');
+    whites.forEach((m, i) => {
+      const x = +(padX + i * (ww + gap)).toFixed(2);
+      const on = lit.has(m);
+      parts.push('<rect class="mk-white' + (on ? ' is-on' : '') + '" x="' + x + '" y="' + padY + '" width="' + ww + '" height="' + wh + '" rx="0.8"/>');
+    });
+    for (let m = start; m <= end; m++) {
+      if (!isBlackMidi(m)) continue;
+      let leftWi = -1;
+      for (let i = 0; i < whites.length; i++) {
+        if (whites[i] < m) leftWi = i;
+        else break;
+      }
+      if (leftWi < 0) continue;
+      const x = +(padX + (leftWi + 1) * (ww + gap) - gap / 2 - bw / 2).toFixed(2);
+      const on = lit.has(m);
+      parts.push('<rect class="mk-black' + (on ? ' is-on' : '') + '" x="' + x + '" y="' + padY + '" width="' + bw + '" height="' + bh + '" rx="0.55"/>');
+    }
+    parts.push("</svg>");
+    return parts.join("");
   }
 
   function voicingMidisFor(symbol) {
@@ -387,9 +435,14 @@
   function heldMatchesMidi(actualMidi) {
     if (!held.size) return false;
     let ok = false;
+    const w = wrapToWindow(actualMidi);
     held.forEach((h) => {
-      const w = wrapToWindow(actualMidi);
-      if (h === actualMidi || h === w.displaySounding || h === w.baseMidi) ok = true;
+      if (h === actualMidi || h === w.displaySounding || h === w.baseMidi) {
+        ok = true;
+        return;
+      }
+      const hw = wrapToWindow(h);
+      if (hw.baseMidi === w.baseMidi || hw.displaySounding === w.displaySounding) ok = true;
     });
     return ok;
   }
@@ -445,7 +498,20 @@
       const li = document.createElement("li");
       li.className = "gm-chord-item";
       li.dataset.chord = sym;
-      li.textContent = prettyChordSymbol(sym);
+      const midis = voicingMidisFor(sym);
+      const nameEl = document.createElement("span");
+      nameEl.className = "gm-chord-name";
+      nameEl.textContent = prettyChordSymbol(sym);
+      const voicingEl = document.createElement("span");
+      voicingEl.className = "gm-chord-voicing";
+      voicingEl.innerHTML = miniKeyboardMarkup(midis);
+      li.appendChild(nameEl);
+      li.appendChild(voicingEl);
+      const labels = midis.map((m) => {
+        if (global.MusicTheory && MusicTheory.midiToName) return MusicTheory.prettyNote(MusicTheory.midiToName(m));
+        return String(m);
+      });
+      if (labels.length) li.setAttribute("title", prettyChordSymbol(sym) + "（" + labels.join(" ") + "）");
       listEl.appendChild(li);
     });
     lastRailCurrent = null;
@@ -481,20 +547,13 @@
     });
     if (!held.size) return ids;
     held.forEach((midi) => {
-      let best = null;
-      let bestScore = Infinity;
       notes.forEach((n) => {
         if (!noteVisible(n) || n.status === "miss") return;
         if (!matchesPress(n, midi)) return;
         const end = n.start + n.dur;
         if (beat < n.start - LIT_EARLY || beat > end + 0.25) return;
-        let score;
-        if (beat >= n.start && beat <= end) score = 0;
-        else if (beat < n.start) score = n.start - beat;
-        else score = 20 + (beat - end);
-        if (score < bestScore) { best = n; bestScore = score; }
+        ids.add(n.id);
       });
-      if (best) ids.add(best.id);
     });
     return ids;
   }
@@ -1285,10 +1344,11 @@
   function naturalGameScale() {
     const board = document.querySelector(".game-board");
     const rail = document.getElementById("gm-chord-rail");
-    const railW = rail ? Math.max(RAIL_MIN_PX, Math.ceil(rail.getBoundingClientRect().width || 0)) : RAIL_MIN_PX;
+    const measured = rail ? Math.ceil(rail.getBoundingClientRect().width || 0) : 0;
+    const railW = Math.max(RAIL_MIN_PX, measured);
     const availW = board && board.clientWidth
-      ? Math.max(80, board.clientWidth - 16 - railW)
-      : Math.max(80, window.innerWidth - 24 - railW);
+      ? Math.max(80, board.clientWidth - 16 - railW * 2)
+      : Math.max(80, window.innerWidth - 24 - railW * 2);
     const availH = board && board.clientHeight ? board.clientHeight : window.innerHeight;
     const baseW = 510; /* unscaled MiniLab width (15 white keys + padding) */
     const baseH = 126;

@@ -1193,10 +1193,11 @@ body[data-view="game"] {
 }
 
 .game-board {
+  --gm-rail-min: 15.75rem;
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(var(--gm-rail-min, 9rem), 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(var(--gm-rail-min), 1fr) auto minmax(var(--gm-rail-min), 1fr);
   align-items: stretch;
   width: 100%;
   overflow: hidden;
@@ -1217,15 +1218,25 @@ body[data-view="game"] {
 /* Beginner chord list in the left margin of the piano roll. */
 .gm-chord-rail {
   grid-column: 1;
-  min-width: 0;
-  max-width: 100%;
+  justify-self: start;
+  min-width: var(--gm-rail-min);
+  width: 100%;
+  max-width: 20rem;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding: 10px 8px 12px 14px;
+  padding: 8px 8px 10px 10px;
   overflow: hidden;
   z-index: 3;
+  background: #0c1018;
+  border-right: 1px solid #222838;
+  box-sizing: border-box;
+}
+.gm-board-spacer {
+  grid-column: 3;
+  min-width: var(--gm-rail-min);
+  pointer-events: none;
 }
 .gm-chord-rail-title {
   flex: 0 0 auto;
@@ -1252,16 +1263,67 @@ body[data-view="game"] {
 }
 .gm-chord-item {
   margin: 0;
-  padding: 0.22em 0.45em;
+  padding: 0.16em 0.4em 0.22em;
   border-radius: 10px;
   color: #cfd5e2;
-  font-size: clamp(1.15rem, 2.1vw, 1.95rem);
+  font-size: clamp(0.95rem, 1.25vw, 1.25rem);
   font-weight: 800;
-  line-height: 1.28;
+  line-height: 1.15;
   letter-spacing: 0.01em;
   white-space: nowrap;
   border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex: 0 0 auto;
   transition: background 0.08s linear, color 0.08s linear, box-shadow 0.08s linear, border-color 0.08s linear;
+}
+.gm-chord-name {
+  display: block;
+  font-weight: 800;
+  line-height: 1.15;
+}
+.gm-chord-voicing {
+  display: block;
+  width: 100%;
+  line-height: 0;
+}
+.gm-mini-kbd {
+  display: block;
+  width: 100%;
+  max-width: 148px;
+  height: auto;
+}
+.gm-mini-kbd .mk-white {
+  fill: #e8eaf0;
+  stroke: #2a3040;
+  stroke-width: 0.45;
+}
+.gm-mini-kbd .mk-white.is-on {
+  fill: #7ec4ff;
+  stroke: #ffffff;
+  stroke-width: 0.6;
+}
+.gm-mini-kbd .mk-black {
+  fill: #161922;
+  stroke: #000000;
+  stroke-width: 0.35;
+}
+.gm-mini-kbd .mk-black.is-on {
+  fill: #1a7aef;
+  stroke: #d7ecff;
+  stroke-width: 0.55;
+}
+.gm-chord-item.is-pressed .gm-mini-kbd .mk-white.is-on,
+.gm-chord-item.is-current.is-pressed .gm-mini-kbd .mk-white.is-on {
+  fill: #ffffff;
+  stroke: #0a4cad;
+}
+.gm-chord-item.is-pressed .gm-mini-kbd .mk-black.is-on,
+.gm-chord-item.is-current.is-pressed .gm-mini-kbd .mk-black.is-on {
+  fill: #0046c8;
+  stroke: #ffffff;
 }
 .gm-chord-item.is-current {
   color: #ffffff;
@@ -1459,11 +1521,22 @@ body[data-view="game"] .key.white:active .oct-mark {
   .gm-feedback { font-size: 1.25rem; top: 14%; }
   .gm-chord-rail { padding: 6px 6px 8px 8px; }
   .gm-chord-rail-title { margin-bottom: 4px; font-size: 0.7rem; }
-  .gm-chord-item { font-size: clamp(0.95rem, 1.8vw, 1.35rem); padding: 0.12em 0.35em; }
+  .gm-chord-item { font-size: clamp(0.85rem, 1.4vw, 1.05rem); padding: 0.1em 0.3em 0.14em; gap: 2px; }
+}
+@media (max-width: 1100px) {
+  .game-board { --gm-rail-min: 13rem; }
+}
+@media (max-width: 900px) {
+  .game-board { --gm-rail-min: 11.25rem; }
+  .gm-mini-kbd { max-width: 128px; }
 }
 @media (max-width: 720px) {
   .gm-wait-label { font-size: 0.75rem; }
   .btn-gm-toggle { height: 30px; font-size: 0.75rem; padding: 0 8px; }
-  .game-board { grid-template-columns: minmax(6.5rem, 0.95fr) auto minmax(0, 1fr); }
-  .gm-chord-item { font-size: 0.95rem; }
+  .game-board {
+    --gm-rail-min: 8.75rem;
+    grid-template-columns: minmax(var(--gm-rail-min), 1fr) auto minmax(0, 1fr);
+  }
+  .gm-chord-item { font-size: 0.85rem; }
+  .gm-board-spacer { min-width: 0; }
 }

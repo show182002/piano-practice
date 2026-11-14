@@ -201,6 +201,7 @@
       keyEls.set(midi, el);
     }
     applyHighlight();
+    refreshActiveKeys();
     for (const fn of rebuildListeners) {
       try { fn(); } catch (_) { /* listener error */ }
     }
@@ -228,6 +229,38 @@
     return baseMidi + octaveOffset * 12;
   }
 
+  /* Map a MIDI number onto one key in the visible 25-key window by whole
+     octaves (C has both C3 and C5; the nearer key is used). */
+  function wrapBaseToWindow(base) {
+    if (base == null || !Number.isFinite(base)) return null;
+    const start = START_MIDI;
+    const end = START_MIDI + KEY_COUNT - 1;
+    if (base >= start && base <= end) return base;
+    const pc = ((base % 12) + 12) % 12;
+    let best = null;
+    for (let m = start; m <= end; m++) {
+      if (((m % 12) + 12) % 12 !== pc) continue;
+      if (best == null || Math.abs(m - base) < Math.abs(best - base)) best = m;
+    }
+    return best;
+  }
+
+  function resolveIncomingMidi(midi) {
+    if (midi == null || !Number.isFinite(Number(midi))) {
+      return { baseMidi: null, soundingMidi: midi };
+    }
+    const n = Number(midi);
+    const base = wrapBaseToWindow(n - octaveOffset * 12);
+    if (base == null) return { baseMidi: null, soundingMidi: n };
+    return { baseMidi: base, soundingMidi: soundingMidi(base) };
+  }
+
+  function refreshActiveKeys() {
+    for (const [base, el] of keyEls) {
+      el.classList.toggle("active", held.has(soundingMidi(base)));
+    }
+  }
+
   function setActive(baseMidi, on) {
     const el = keyEls.get(baseMidi);
     if (el) el.classList.toggle("active", on);
@@ -252,17 +285,25 @@
   }
 
   function pressAbsolute(midi, velocity) {
-    const base = midi - octaveOffset * 12;
+    const mapped = resolveIncomingMidi(midi);
+    if (mapped.baseMidi != null) {
+      press(mapped.baseMidi, velocity);
+      return;
+    }
+    if (held.has(midi)) return;
     held.add(midi);
-    if (base >= START_MIDI && base < START_MIDI + KEY_COUNT) setActive(base, true);
     PianoAudio.noteOn(midi, velocity);
     emitNote(midi, velocity, true);
   }
 
   function releaseAbsolute(midi) {
+    const mapped = resolveIncomingMidi(midi);
+    if (mapped.baseMidi != null) {
+      release(mapped.baseMidi);
+      return;
+    }
+    if (!held.has(midi)) return;
     held.delete(midi);
-    const base = midi - octaveOffset * 12;
-    if (base >= START_MIDI && base < START_MIDI + KEY_COUNT) setActive(base, false);
     PianoAudio.noteOff(midi, false);
     emitNote(midi, 0, false);
   }
@@ -726,6 +767,7 @@
     getStartMidi: () => START_MIDI,
     getKeyCount: () => KEY_COUNT,
     getOctaveOffset: () => octaveOffset,
+    resolveIncomingMidi,
     getKeyLayout,
     onRebuild,
     getKeyboardEl: () => keyboard,
