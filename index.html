@@ -6,14 +6,14 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.02000</title>
+  <title>鋼琴練習 · Piano Practice v0.03000</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.02000</span></h1>
-      <p class="hint">喺下面揀一首歌入去練習。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
+      <h1>鋼琴練習 <span class="ver">v0.03000</span></h1>
+      <p class="hint">喺下面揀一首歌。《單車》可以揀跟譜練習，或者用跌落音符嘅遊戲模式。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
     <section class="panel home-connect">
@@ -32,7 +32,7 @@
     </div>
 
     <footer class="foot">
-      <p>v0.02000：練習頁加咗「結他和弦」圖（可開關、可放大縮小；跟住譜視窗同 playhead 高亮而家嗰個和弦），同埋「歌詞大小」可以縮放譜下面嘅音名同自貼歌詞。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》同《Shall We Talk》嘅編曲同歌詞欄不變。</p>
+      <p>v0.03000：選《單車》之後可以揀「跟譜練習」或新嘅「遊戲」模式（跌落音符、旋律／和弦同聲可以分開開關、等到你撳先繼續、玩緊可以改 BPM、鼓勵用計分）。《Shall We Talk》仍然只有跟譜練習。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》同《Shall We Talk》嘅編曲同歌詞欄不變。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -198,6 +198,123 @@
     </div>
   </section>
 
+
+  <section id="view-game" class="view view-game" hidden>
+    <div class="rotate-hint" id="gm-rotate-hint" role="dialog" aria-label="請將手機打橫">
+      <div class="rotate-hint-card">
+        <svg class="rotate-hint-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="18" y="8" width="28" height="48" rx="4" fill="none" stroke="currentColor" stroke-width="3"/>
+          <circle cx="32" cy="50" r="2" fill="currentColor"/>
+          <path d="M50 22c8 6 8 18 0 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <path d="M50 18v8h-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p>請將手機打橫</p>
+      </div>
+    </div>
+
+    <div class="game-stage">
+      <div class="practice-chrome game-chrome">
+        <button type="button" class="btn chrome-back" data-open-home>返回</button>
+
+        <div class="fa-transport-btns" role="group" aria-label="播放控制">
+          <button type="button" class="btn-transport is-play-pause" id="gm-play" aria-label="播放" title="播放">
+            <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.8v14.4L20.2 12 8 4.8z" fill="currentColor"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1" fill="currentColor"/></svg>
+          </button>
+          <button type="button" class="btn-transport is-restart" id="gm-restart" aria-label="由頭" title="由頭">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4.2" y="5" width="2.2" height="14" rx="0.8" fill="currentColor"/>
+              <path d="M19.5 5.2v13.6L8.2 12 19.5 5.2z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="gm-tracks" role="group" aria-label="遊戲音軌">
+          <div class="gm-track">
+            <button type="button" class="btn-gm-toggle is-track" id="gm-show-melody" aria-pressed="true" title="顯示旋律音符">旋律</button>
+            <button type="button" class="btn-gm-toggle is-sound" id="gm-sound-melody" aria-pressed="true" title="旋律示範聲" aria-label="旋律聲">聲</button>
+          </div>
+          <div class="gm-track">
+            <button type="button" class="btn-gm-toggle is-track is-chord" id="gm-show-chord" aria-pressed="true" title="顯示和弦音符">和弦</button>
+            <button type="button" class="btn-gm-toggle is-sound" id="gm-sound-chord" aria-pressed="true" title="和弦示範聲" aria-label="和弦聲">聲</button>
+          </div>
+        </div>
+
+        <label class="chrome-label gm-wait-label">
+          <input type="checkbox" id="gm-wait" checked />等到你撳先繼續
+        </label>
+
+        <label class="chrome-label gm-bpm-label">BPM
+          <input id="gm-bpm" type="range" min="40" max="120" value="68" />
+          <span id="gm-bpm-val">68</span>
+        </label>
+
+        <button type="button" class="btn btn-more" id="gm-more" aria-expanded="false" aria-controls="gm-more-panel" aria-label="更多" title="更多">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M14 5v4M4 17h4M10 17h10M8 15v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="practice-more game-more" id="gm-more-panel">
+        <button type="button" class="btn primary btn-audio practice-audio-fallback" id="gm-audio-fallback" hidden>開聲</button>
+        <span class="practice-midi" id="gm-midi-wrap">
+          <button type="button" class="btn btn-midi btn-midi-compact">連接 MIDI</button>
+          <span class="midi-status status">MIDI：未連接</span>
+        </span>
+        <label class="chrome-label">鍵盤大小
+          <input id="gm-key-scale" type="range" min="70" max="280" value="100" />
+          <span id="gm-key-scale-val">100%</span>
+        </label>
+        <label class="chrome-label">八度
+          <select class="octave-offset">
+            <option value="-1">−1</option>
+            <option value="0" selected>0</option>
+            <option value="1">+1</option>
+          </select>
+        </label>
+        <label class="chrome-label">音量
+          <input class="volume" type="range" min="0" max="100" value="70" />
+        </label>
+        <label class="chrome-label reverb-label">殘響
+          <span class="reverb-end">乾</span>
+          <input class="reverb" id="gm-reverb" type="range" min="0" max="100" value="40" />
+          <span class="reverb-end">濕</span>
+        </label>
+        <span class="sample-status status" data-sample-status></span>
+      </div>
+
+      <div class="gm-hud">
+        <span class="gm-title" id="gm-title">單車 · 遊戲</span>
+        <span class="gm-pos" id="gm-pos"></span>
+        <span class="gm-score-wrap">分數 <span class="gm-score" id="gm-score">0</span></span>
+        <span class="gm-combo" id="gm-combo" hidden></span>
+        <span class="gm-feedback" id="gm-feedback"></span>
+      </div>
+
+      <div class="fa-transport gm-transport">
+        <div class="fa-timeline">
+          <span class="fa-time" id="gm-time-now">0:00</span>
+          <div class="fa-timeline-track" id="gm-timeline-track" aria-hidden="true">
+            <div class="fa-timeline-fill" id="gm-timeline-fill"></div>
+            <div class="fa-timeline-playhead" id="gm-timeline-playhead"></div>
+          </div>
+          <span class="fa-time" id="gm-time-total">0:00</span>
+        </div>
+        <p class="fa-status" id="gm-status"></p>
+      </div>
+
+      <div class="game-board-scroll">
+        <div class="game-board">
+          <div class="game-lanes-wrap" id="gm-lanes-wrap">
+            <canvas id="gm-lanes" class="game-lanes" aria-label="跌落音符"></canvas>
+          </div>
+          <div class="keyboard-wrap practice-keys game-keys" id="keyboard-dock-game"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="view-cof" class="view view-cof" hidden>
     <header class="top">
       <button type="button" class="btn" data-open-home>返回曲目</button>
@@ -226,6 +343,7 @@
   <script src="js/songs/shallWeTalk.js"></script>
   <script src="js/guitarChords.js"></script>
   <script src="js/followAlong.js"></script>
+  <script src="js/gameMode.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

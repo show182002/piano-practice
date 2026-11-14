@@ -36,6 +36,7 @@
   let keyScale = SCALE_DEFAULT;
   let scaleUserSet = false;
   const noteListeners = new Set();
+  const rebuildListeners = new Set();
   const controlGroups = [];
 
   function isBlack(midi) {
@@ -198,6 +199,9 @@
       keyEls.set(midi, el);
     }
     applyHighlight();
+    for (const fn of rebuildListeners) {
+      try { fn(); } catch (_) { /* listener error */ }
+    }
   }
 
   function bindPointer(el, baseMidi) {
@@ -339,6 +343,9 @@
           if (s !== octaveSel) s.value = String(octaveOffset);
         });
         applyHighlight();
+        for (const fn of rebuildListeners) {
+          try { fn(); } catch (_) { /* listener error */ }
+        }
       });
     }
     if (volume && !volume.dataset.bound) {
@@ -552,29 +559,80 @@
   function syncScaleSlider() {
     const pct = Math.round(keyScale * 100);
     const maxPct = Math.round(scaleMax() * 100);
-    document.querySelectorAll("#fa-key-scale").forEach((el) => {
+    document.querySelectorAll("#fa-key-scale, #gm-key-scale").forEach((el) => {
       el.min = String(Math.round(SCALE_MIN * 100));
       el.max = String(maxPct);
       if (!el.matches(":active")) el.value = String(pct);
     });
-    document.querySelectorAll("#fa-key-scale-val").forEach((el) => {
+    document.querySelectorAll("#fa-key-scale-val, #gm-key-scale-val").forEach((el) => {
       el.textContent = pct + "%";
     });
   }
 
   function bindScaleControl(root) {
     const scope = root && root.querySelector ? root : document;
-    const slider = scope.querySelector("#fa-key-scale");
-    if (!slider || slider.dataset.bound) return;
-    slider.dataset.bound = "1";
-    slider.min = String(Math.round(SCALE_MIN * 100));
-    slider.max = String(Math.round(scaleMax() * 100));
-    slider.value = String(Math.round(keyScale * 100));
-    slider.addEventListener("input", () => {
-      setScale(Number(slider.value) / 100, { user: true });
-      syncScaleSlider();
+    const sliders = scope.querySelectorAll("#fa-key-scale, #gm-key-scale");
+    sliders.forEach((slider) => {
+      if (slider.dataset.bound) return;
+      slider.dataset.bound = "1";
+      slider.min = String(Math.round(SCALE_MIN * 100));
+      slider.max = String(Math.round(scaleMax() * 100));
+      slider.value = String(Math.round(keyScale * 100));
+      slider.addEventListener("input", () => {
+        setScale(Number(slider.value) / 100, { user: true });
+        syncScaleSlider();
+      });
     });
-    syncScaleSlider();
+    if (sliders.length) syncScaleSlider();
+  }
+
+  function getKeyLayout() {
+    const keys = [];
+    if (!keyboard) {
+      return {
+        keys: keys,
+        width: 0,
+        height: 0,
+        left: 0,
+        top: 0,
+        startMidi: START_MIDI,
+        keyCount: KEY_COUNT,
+        octaveOffset: octaveOffset
+      };
+    }
+    const kbd = keyboard.getBoundingClientRect();
+    for (let i = 0; i < KEY_COUNT; i++) {
+      const midi = START_MIDI + i;
+      const el = keyEls.get(midi);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      keys.push({
+        baseMidi: midi,
+        soundingMidi: midi + octaveOffset * 12,
+        black: isBlack(midi),
+        x: r.left - kbd.left,
+        y: r.top - kbd.top,
+        w: r.width,
+        h: r.height,
+        cx: r.left - kbd.left + r.width / 2
+      });
+    }
+    return {
+      keys: keys,
+      width: kbd.width,
+      height: kbd.height,
+      left: kbd.left,
+      top: kbd.top,
+      startMidi: START_MIDI,
+      keyCount: KEY_COUNT,
+      octaveOffset: octaveOffset
+    };
+  }
+
+  function onRebuild(fn) {
+    if (typeof fn !== "function") return function () {};
+    rebuildListeners.add(fn);
+    return function () { rebuildListeners.delete(fn); };
   }
 
   function mountKeyboard(el) {
@@ -655,6 +713,9 @@
     onNoteEvent: subscribeNotes,
     getStartMidi: () => START_MIDI,
     getKeyCount: () => KEY_COUNT,
+    getOctaveOffset: () => octaveOffset,
+    getKeyLayout,
+    onRebuild,
     getKeyboardEl: () => keyboard,
     unlockAudio,
     syncAudioUnlockUi,

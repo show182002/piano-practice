@@ -1,9 +1,11 @@
-/* View router: home (song select) → practice, or the 五度圈 tool as its own view. */
+/* View router: home (song select) → practice or game, or the 五度圈 tool. */
 (function (global) {
   const viewHome = document.getElementById("view-home");
   const viewPractice = document.getElementById("view-practice");
+  const viewGame = document.getElementById("view-game");
   const viewCof = document.getElementById("view-cof");
   const keyboardDockPractice = document.getElementById("keyboard-dock-practice");
+  const keyboardDockGame = document.getElementById("keyboard-dock-game");
   const keyboardDockCof = document.getElementById("keyboard-dock-cof");
   const keyboardEl = document.getElementById("keyboard");
 
@@ -22,15 +24,22 @@
     current = id;
     if (viewHome) viewHome.hidden = id !== "home";
     if (viewPractice) viewPractice.hidden = id !== "practice";
+    if (viewGame) viewGame.hidden = id !== "game";
     if (viewCof) viewCof.hidden = id !== "cof";
     document.body.dataset.view = id;
 
     if (prev === "practice" && id !== "practice" && global.FollowAlong) {
       FollowAlong.deactivate();
     }
+    if (prev === "game" && id !== "game" && global.GameMode) {
+      GameMode.deactivate();
+    }
     if (id === "practice") {
       moveKeyboard(keyboardDockPractice);
       if (global.FollowAlong) FollowAlong.activate();
+    } else if (id === "game") {
+      moveKeyboard(keyboardDockGame);
+      if (global.GameMode) GameMode.activate();
     } else if (id === "cof") {
       moveKeyboard(keyboardDockCof);
       if (global.CircleOfFifths) CircleOfFifths.activate();
@@ -56,11 +65,25 @@
     return list;
   }
 
+  function hasGameMode(songData) {
+    if (global.GameMode && typeof GameMode.hasGame === "function") {
+      return GameMode.hasGame(songData);
+    }
+    return !!(songData && songData.id === "danche");
+  }
+
   function openPractice(songData) {
     if (!songData || !global.FollowAlong) return;
     if (typeof FollowAlong.setSong === "function") FollowAlong.setSong(songData);
     else FollowAlong.mount(document.getElementById("fa-staff"), songData);
     show("practice");
+  }
+
+  function openGame(songData) {
+    if (!songData || !global.GameMode) return;
+    if (typeof GameMode.setSong === "function") GameMode.setSong(songData);
+    else GameMode.mount(songData);
+    show("game");
   }
 
   function renderSongGrid() {
@@ -90,13 +113,26 @@
       meta.textContent = s.disclaimer || "";
       card.appendChild(meta);
 
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn primary";
-      btn.textContent = "開始練習";
-      btn.addEventListener("click", () => openPractice(s));
-      card.appendChild(btn);
+      const actions = document.createElement("div");
+      actions.className = "song-card-actions";
 
+      const practiceBtn = document.createElement("button");
+      practiceBtn.type = "button";
+      practiceBtn.className = hasGameMode(s) ? "btn" : "btn primary";
+      practiceBtn.textContent = "跟譜練習";
+      practiceBtn.addEventListener("click", () => openPractice(s));
+      actions.appendChild(practiceBtn);
+
+      if (hasGameMode(s)) {
+        const gameBtn = document.createElement("button");
+        gameBtn.type = "button";
+        gameBtn.className = "btn primary";
+        gameBtn.textContent = "遊戲";
+        gameBtn.addEventListener("click", () => openGame(s));
+        actions.appendChild(gameBtn);
+      }
+
+      card.appendChild(actions);
       grid.appendChild(card);
     });
   }
@@ -116,6 +152,9 @@
   }
   if (global.FollowAlong && global.Songs && Songs.danche) {
     FollowAlong.mount(document.getElementById("fa-staff"), Songs.danche);
+  }
+  if (global.GameMode && global.Songs && Songs.danche) {
+    GameMode.mount(Songs.danche);
   }
   if (global.CircleOfFifths) {
     CircleOfFifths.mount(document.getElementById("circle-of-fifths"), { highlight: false });
