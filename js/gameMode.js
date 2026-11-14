@@ -10,7 +10,10 @@
   const HIT_LATE = 0.40;
   const PERFECT_BEATS = 0.12;
   const MIN_BAR_PX = 18;
+  const LIT_EARLY = TRAVEL_BEATS;
+  const RAIL_MIN_PX = 148;
   const VOICE_OPTS = { minMidi: 48, maxMidi: 67 };
+  const FALLBACK_CHORDS = ["G", "D/F#", "Em", "Bm/D", "C", "G/B", "Am7", "C/D", "D", "G/F", "C/E", "Cm6/Eb", "G/D", "A/C#"];
   const STORAGE = {
     showMelody: "piano-practice-game-show-melody",
     showChord: "piano-practice-game-show-chord",
@@ -23,10 +26,12 @@
   const COLOR = {
     melody: { fill: "#3ee87a", stroke: "#b7ffd0", text: "#06210f", glow: "rgba(62, 232, 122, 0.45)" },
     melodyWrap: { fill: "#1b8a46", stroke: "#3ee87a", text: "#e8ffe9", glow: "rgba(27, 138, 70, 0.45)" },
-    melodyHit: { fill: "#b8ffd3", stroke: "#ffffff", text: "#06210f", glow: "rgba(170, 255, 210, 0.95)" },
+    melodyHit: { fill: "#d4ffea", stroke: "#ffffff", text: "#06210f", glow: "rgba(200, 255, 225, 1)" },
+    melodyLit: { fill: "#f3fff6", stroke: "#ffffff", text: "#06210f", glow: "rgba(220, 255, 230, 1)" },
     chord: { fill: "#3d9bff", stroke: "#b3d9ff", text: "#041018", glow: "rgba(61, 155, 255, 0.4)" },
     chordWrap: { fill: "#0d4fa8", stroke: "#3d9bff", text: "#e8f3ff", glow: "rgba(13, 79, 168, 0.45)" },
-    chordHit: { fill: "#b3dcff", stroke: "#ffffff", text: "#041018", glow: "rgba(165, 215, 255, 0.95)" },
+    chordHit: { fill: "#d0ebff", stroke: "#ffffff", text: "#041018", glow: "rgba(200, 230, 255, 1)" },
+    chordLit: { fill: "#f0f7ff", stroke: "#ffffff", text: "#041018", glow: "rgba(220, 240, 255, 1)" },
     miss: { fill: "#5a6170", stroke: "#8a91a0", text: "#d0d4dc" }
   };
 
@@ -62,6 +67,8 @@
   let gameScaleUserSet = false;
   let canvasCssW = 0;
   let canvasCssH = 0;
+  let chordSymbols = [];
+  let lastRailCurrent = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -354,6 +361,144 @@
     return midi === w.displaySounding || midi === w.baseMidi || midi === n.midi;
   }
 
+  function uniqueChordSymbols() {
+    const seen = new Set();
+    const list = [];
+    ((level && level.progression) || []).forEach((ev) => {
+      const sym = ev && ev.chord ? String(ev.chord).trim() : "";
+      if (!sym || seen.has(sym)) return;
+      seen.add(sym);
+      list.push(sym);
+    });
+    return list.length ? list : FALLBACK_CHORDS.slice();
+  }
+
+  function prettyChordSymbol(sym) {
+    return String(sym || "").replace(/#/g, "♯").replace(/([A-G])b/g, "$1♭");
+  }
+
+  function voicingMidisFor(symbol) {
+    if (!symbol || !global.MusicTheory || !MusicTheory.chordVoicingFromSymbol) return [];
+    return (MusicTheory.chordVoicingFromSymbol(symbol, VOICE_OPTS) || [])
+      .map((v) => v.midi)
+      .filter((m) => Number.isFinite(m));
+  }
+
+  function heldMatchesMidi(actualMidi) {
+    if (!held.size) return false;
+    let ok = false;
+    held.forEach((h) => {
+      const w = wrapToWindow(actualMidi);
+      if (h === actualMidi || h === w.displaySounding || h === w.baseMidi) ok = true;
+    });
+    return ok;
+  }
+
+  function heldMatchesVoicing(midis) {
+    if (!midis || !midis.length || !held.size) return false;
+    return midis.every((m) => heldMatchesMidi(m));
+  }
+
+  function chordAtBeat(beat) {
+    if (!level || !level.progression || beat < -1e-6) return "";
+    let t = 0;
+    for (let i = 0; i < level.progression.length; i++) {
+      const ev = level.progression[i];
+      const start = t;
+      const end = t + ev.beats;
+      t = end;
+      if (beat >= start - 1e-6 && beat < end - 1e-9) {
+        return ev.chord ? String(ev.chord).trim() : "";
+      }
+    }
+    return "";
+  }
+
+  function pressedChordSymbol(currentSym) {
+    if (!held.size || !chordSymbols.length) return "";
+    const matches = [];
+    chordSymbols.forEach((sym) => {
+      const midis = voicingMidisFor(sym);
+      if (heldMatchesVoicing(midis)) matches.push({ sym: sym, n: midis.length });
+    });
+    if (!matches.length) return "";
+    matches.sort((a, b) => {
+      if (b.n !== a.n) return b.n - a.n;
+      if (currentSym && a.sym === currentSym) return -1;
+      if (currentSym && b.sym === currentSym) return 1;
+      return 0;
+    });
+    return matches[0].sym;
+  }
+
+  function railItemSelector(sym) {
+    const esc = (window.CSS && CSS.escape) ? CSS.escape(sym) : String(sym).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return '.gm-chord-item[data-chord="' + esc + '"]';
+  }
+
+  function buildChordRail() {
+    const listEl = $("gm-chord-list");
+    if (!listEl) return;
+    chordSymbols = uniqueChordSymbols();
+    listEl.innerHTML = "";
+    chordSymbols.forEach((sym) => {
+      const li = document.createElement("li");
+      li.className = "gm-chord-item";
+      li.dataset.chord = sym;
+      li.textContent = prettyChordSymbol(sym);
+      listEl.appendChild(li);
+    });
+    lastRailCurrent = null;
+    syncChordRail();
+  }
+
+  function syncChordRail() {
+    const listEl = $("gm-chord-list");
+    if (!listEl) return;
+    const currentSym = chordAtBeat(currentBeatFloat());
+    const pressedSym = pressedChordSymbol(currentSym);
+    listEl.querySelectorAll(".gm-chord-item").forEach((li) => {
+      const isCurrent = !!currentSym && li.dataset.chord === currentSym;
+      const isPressed = !!pressedSym && li.dataset.chord === pressedSym;
+      li.classList.toggle("is-current", isCurrent);
+      li.classList.toggle("is-pressed", isPressed);
+      if (isCurrent) li.setAttribute("aria-current", "true");
+      else li.removeAttribute("aria-current");
+    });
+    if (currentSym && currentSym !== lastRailCurrent) {
+      const cur = listEl.querySelector(railItemSelector(currentSym));
+      if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    lastRailCurrent = currentSym;
+  }
+
+  function litNoteIds(beat) {
+    const ids = new Set();
+    notes.forEach((n) => {
+      if (!noteVisible(n) || n.status === "miss") return;
+      const end = n.start + n.dur;
+      if (n.status === "hit" && beat <= end + 0.08) ids.add(n.id);
+    });
+    if (!held.size) return ids;
+    held.forEach((midi) => {
+      let best = null;
+      let bestScore = Infinity;
+      notes.forEach((n) => {
+        if (!noteVisible(n) || n.status === "miss") return;
+        if (!matchesPress(n, midi)) return;
+        const end = n.start + n.dur;
+        if (beat < n.start - LIT_EARLY || beat > end + 0.25) return;
+        let score;
+        if (beat >= n.start && beat <= end) score = 0;
+        else if (beat < n.start) score = n.start - beat;
+        else score = 20 + (beat - end);
+        if (score < bestScore) { best = n; bestScore = score; }
+      });
+      if (best) ids.add(best.id);
+    });
+    return ids;
+  }
+
   function dueNotes(beat) {
     return notes.filter((n) => noteVisible(n) && n.status === "pending" && n.start <= beat + 1e-6);
   }
@@ -450,6 +595,9 @@
     } else {
       held.delete(ev.midi);
     }
+    syncChordRail();
+    highlightApproaching(currentBeatFloat());
+    drawLanes();
   }
 
   function resetScore() {
@@ -704,6 +852,8 @@
       return yAttack >= -8 && yRelease <= h + 24;
     });
 
+    const litIds = litNoteIds(beat);
+
     function drawNote(n) {
       const wr = wrapToWindow(n.midi);
       const col = geo.map.get(wr.baseMidi);
@@ -723,14 +873,22 @@
       const inset = col.black ? 1 : 2.5;
       const x = col.x + inset;
       const bw = Math.max(8, col.w - inset * 2);
-      const pal = colorFor(n, wr.wrap);
+      const lit = litIds.has(n.id);
+      const pal = lit
+        ? (n.track === "melody" ? COLOR.melodyLit : COLOR.chordLit)
+        : colorFor(n, wr.wrap);
       const r = Math.min(5, bw / 2, height / 2);
       ctx.save();
       const atLine = n.status === "pending" && Math.abs(beat - n.start) <= HIT_LATE;
-      const heldHit = n.status === "hit";
-      if (atLine || heldHit) {
+      if (lit) {
+        ctx.shadowColor = pal.glow;
+        ctx.shadowBlur = 46;
+      } else if (atLine) {
         ctx.shadowColor = pal.glow || pal.stroke;
-        ctx.shadowBlur = heldHit ? 26 : 14;
+        ctx.shadowBlur = 14;
+      } else if (n.status === "hit") {
+        ctx.shadowColor = pal.glow || pal.stroke;
+        ctx.shadowBlur = 28;
       }
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y, bw, height, r);
@@ -739,12 +897,18 @@
       ctx.globalAlpha = n.status === "miss" ? 0.4 : 1;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = n.status === "hit" ? 2.2 : 1.3;
+      ctx.lineWidth = lit ? 3.2 : (n.status === "hit" ? 2.4 : 1.3);
       ctx.strokeStyle = pal.stroke;
       ctx.stroke();
       ctx.shadowBlur = 0;
-      if (n.status === "hit") {
-        // A bright contact flash where the bar meets the red line.
+      if (lit) {
+        // Whole-bar wash so the glow reads on the full vertical bar, not just the contact.
+        ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      } else if (n.status === "hit") {
         const flashH = Math.min(10, height);
         ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
         ctx.fillRect(x, hitY - flashH, bw, flashH);
@@ -805,6 +969,7 @@
     syncHud();
     syncTransport();
     highlightApproaching(beat);
+    syncChordRail();
     drawLanes();
   }
 
@@ -862,6 +1027,7 @@
     syncHud();
     syncTransport();
     updateTimeline();
+    syncChordRail();
     drawLanes();
   }
 
@@ -888,6 +1054,7 @@
     syncHud();
     syncTransport();
     updateTimeline();
+    syncChordRail();
     drawLanes();
   }
 
@@ -918,6 +1085,7 @@
     syncHud();
     syncTransport();
     updateTimeline();
+    syncChordRail();
     drawLanes();
   }
 
@@ -1099,6 +1267,7 @@
     resetScore();
     if (level) buildNotes();
     else notes = [];
+    buildChordRail();
     syncToggles();
     syncHud();
     syncTransport();
@@ -1115,7 +1284,11 @@
      white keys taller than they are wide at typical desktop widths. */
   function naturalGameScale() {
     const board = document.querySelector(".game-board");
-    const availW = board && board.clientWidth ? Math.max(80, board.clientWidth - 16) : Math.max(80, window.innerWidth - 24);
+    const rail = document.getElementById("gm-chord-rail");
+    const railW = rail ? Math.max(RAIL_MIN_PX, Math.ceil(rail.getBoundingClientRect().width || 0)) : RAIL_MIN_PX;
+    const availW = board && board.clientWidth
+      ? Math.max(80, board.clientWidth - 16 - railW)
+      : Math.max(80, window.innerWidth - 24 - railW);
     const availH = board && board.clientHeight ? board.clientHeight : window.innerHeight;
     const baseW = 510; /* unscaled MiniLab width (15 white keys + padding) */
     const baseH = 126;
@@ -1168,6 +1341,7 @@
         }
       });
     }
+    buildChordRail();
     syncToggles();
     syncHud();
     syncTransport();
@@ -1175,6 +1349,7 @@
     requestAnimationFrame(() => {
       applyGameKeyboardScale();
       syncCanvasSize();
+      syncChordRail();
       drawLanes();
     });
   }

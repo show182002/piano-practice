@@ -6,13 +6,13 @@
      like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=6b53e8f0-d9e3-4a32-b934-f559d65777d6
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>鋼琴練習 · Piano Practice v0.03200</title>
+  <title>鋼琴練習 · Piano Practice v0.03300</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body data-view="home">
   <section id="view-home" class="view view-home">
     <header class="top">
-      <h1>鋼琴練習 <span class="ver">v0.03200</span></h1>
+      <h1>鋼琴練習 <span class="ver">v0.03300</span></h1>
       <p class="hint">喺下面揀一首歌。《單車》可以揀跟譜練習，或者用跌落音符嘅遊戲模式。練習頁上面係譜（旋律在高音譜、和弦在低音譜），歌詞跟住譜下面走，下面係跟 MiniLab 3 嘅鍵盤。跟播示範音可以用旋律／和弦嘅 M／S 控制；示範同彈奏用 Salamander 鋼琴音色。亦可以先開五度圈睇調。</p>
     </header>
 
@@ -32,7 +32,7 @@
     </div>
 
     <footer class="foot">
-      <p>v0.03200：遊戲畫面再接近 Synthesia：擊打線係一條清楚嘅紅色帶，貼喺正常比例鋼琴鍵盤頂；鍵盤按比例縮放，唔會拉闊變肥；打中音符時整條下跌色條會一齊亮，琴鍵接觸位有白光。整體音量加大，限制器保留。遊戲「聲」掣而家會即時靜音該軌示範聲。旋律／和弦顯示同聲仍然可以分開開關、等到你撳先繼續、玩緊可以改 BPM、鼓勵用計分。《Shall We Talk》仍然只有跟譜練習。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》同《Shall We Talk》嘅編曲同歌詞欄不變。</p>
+      <p>v0.03300：遊戲左邊列出《單車》全部 14 個和弦（跟 Level 3 進行，由先至後各出現一次），方便暫停對住練；進行到邊個會標示，撳中／按住嗰個會再高亮。撳螢幕琴鍵或 MIDI 時，對應整條下跌色條會明顯亮起（提早撳都睇到），打中之後一路亮到條過晒擊打線。其餘跟 v0.03200：紅色擊打線、按比例鍵盤（唔會拉闊變肥）、示範聲可即時靜音、等到你撳先繼續、玩緊可以改 BPM、鼓勵用計分。《Shall We Talk》仍然只有跟譜練習。官方歌詞不會預載，請用返「填詞」盒（每首歌獨立存於瀏覽器，鍵名係 piano-practice-lyrics- + 歌曲 id）。《單車》同《Shall We Talk》嘅編曲同歌詞欄不變。</p>
       <p class="credit">鋼琴音色：<a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener noreferrer">Salamander Grand Piano V3</a>，由 Alexander Holm 錄製，採用 <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a> 授權。</p>
     </footer>
   </section>
@@ -288,6 +288,10 @@
       </div>
 
       <div class="game-board">
+        <aside class="gm-chord-rail" id="gm-chord-rail" aria-label="歌曲和弦">
+          <p class="gm-chord-rail-title">和弦</p>
+          <ol class="gm-chord-list" id="gm-chord-list"></ol>
+        </aside>
         <div class="game-stack" id="gm-stack">
           <div class="game-lanes-wrap" id="gm-lanes-wrap">
             <canvas id="gm-lanes" class="game-lanes" aria-label="跌落音符"></canvas>
